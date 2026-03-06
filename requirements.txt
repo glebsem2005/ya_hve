@@ -1,0 +1,15 @@
+tensorflow>=2.13
+tensorflow-hub>=0.14
+numpy>=1.24
+scipy>=1.11
+soundfile>=0.12
+sounddevice>=0.4
+asyncio
+
+fastapi>=0.104
+uvicorn>=0.24
+httpx>=0.25
+python-telegram-bot>=20.6
+python-dotenv>=1.0
+
+aiofiles>=23.2
