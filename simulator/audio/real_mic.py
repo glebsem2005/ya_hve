@@ -5,17 +5,18 @@ import tempfile
 import os
 from dataclasses import dataclass
 
-SAMPLE_RATE   = 16000
+SAMPLE_RATE = 16000
 CHUNK_SECONDS = 2
-CHANNELS      = 1
+CHANNELS = 1
+
 
 @dataclass
 class MicCapture:
-    signals:     list
+    signals: list
     audio_paths: list
 
-class RealMic:
 
+class RealMic:
     def __init__(self, device_id: int | None = None):
         self.device_id = device_id
 
@@ -29,10 +30,10 @@ class RealMic:
                 int(SAMPLE_RATE * CHUNK_SECONDS),
                 samplerate=SAMPLE_RATE,
                 channels=CHANNELS,
-                dtype='float32',
+                dtype="float32",
                 device=self.device_id,
                 blocking=True,
-            )
+            ),
         )
 
         waveform = recording[:, 0]  # mono
@@ -41,6 +42,7 @@ class RealMic:
         sf.write(tmp.name, waveform, SAMPLE_RATE)
 
         # Fake small delays so TDOA doesn't crash
+        sig_a = waveform
         delay_a = np.zeros(5, dtype=np.float32)
         delay_b = np.zeros(15, dtype=np.float32)
 
@@ -51,7 +53,6 @@ class RealMic:
 
 
 class RealMicArray:
-
     def __init__(self, device_ids: list[int]):
         assert len(device_ids) == 3, "Need exactly 3 device IDs"
         self.device_ids = device_ids
@@ -69,10 +70,10 @@ class RealMicArray:
                     int(SAMPLE_RATE * CHUNK_SECONDS),
                     samplerate=SAMPLE_RATE,
                     channels=1,
-                    dtype='float32',
+                    dtype="float32",
                     device=did,
                     blocking=True,
-                )
+                ),
             )
             for did in self.device_ids
         ]
@@ -82,7 +83,7 @@ class RealMicArray:
         for i, rec in enumerate(recordings):
             waveform = rec[:, 0]
             tmp = tempfile.NamedTemporaryFile(
-                suffix=f"_mic_{['A','B','C'][i]}.wav", delete=False
+                suffix=f"_mic_{['A', 'B', 'C'][i]}.wav", delete=False
             )
             sf.write(tmp.name, waveform, SAMPLE_RATE)
             signals.append(waveform)
@@ -93,13 +94,16 @@ class RealMicArray:
 
 def list_devices():
     import sounddevice as sd
+
     devices = sd.query_devices()
     print("\nАудио устройства:")
     print("─" * 50)
     for i, d in enumerate(devices):
-        if d['max_input_channels'] > 0:
+        if d["max_input_channels"] > 0:
             print(f"  [{i}] {d['name']}")
-            print(f"       channels={d['max_input_channels']} sr={int(d['default_samplerate'])}Hz")
+            print(
+                f"       channels={d['max_input_channels']} sr={int(d['default_samplerate'])}Hz"
+            )
     print()
 
 
@@ -125,7 +129,7 @@ if __name__ == "__main__":
             int(SAMPLE_RATE * args.seconds),
             samplerate=SAMPLE_RATE,
             channels=1,
-            dtype='float32',
+            dtype="float32",
             device=args.device,
             blocking=True,
         )

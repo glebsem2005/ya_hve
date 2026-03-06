@@ -27,7 +27,7 @@ services:
 
   lora_gateway:
     build: .
-    command: python -m simulator.lora.socket_relay
+    command: python -m gateway.relay
     ports:
       - "9000:9000"
     env_file:

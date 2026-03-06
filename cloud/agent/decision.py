@@ -1,11 +1,16 @@
 import httpx
 import json
 import os
-from dataclasses import dataclasses
+from dataclasses import dataclass
 
 YANDEX_API_KEY = os.getenv("YANDEX_API_KEY")
-YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID)
-API_URL = ""
+YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID")
+# TODO: Yandex Foundation Models completions API
+# Docs: https://yandex.cloud/docs/foundation-models/
+API_URL = os.getenv(
+    "YANDEX_GPT_URL",
+    "https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
+)
 
 SYSTEM_PROMPT = """
 Ты — система мониторинга леса ForestGuard.
@@ -19,12 +24,14 @@ SYSTEM_PROMPT = """
 - 2-3 предложения максимум
 """
 
+
 @dataclass
 class Alert:
     text: str
     priority: str
     lat: float
-    log: float
+    lon: float
+
 
 async def compose_alert(
     audio_class: str,
@@ -38,7 +45,7 @@ async def compose_alert(
         "chainsaw": "ВЫСОКИЙ",
         "gunshot": "ВЫСОКИЙ",
         "fire": "ВЫСОКИЙ",
-        "unknown": "СРЕДНИЙ"
+        "unknown": "СРЕДНИЙ",
     }
     priority = priority_map.get(audio_class, "СРЕДНИЙ")
     prompt = f"""
@@ -53,8 +60,9 @@ async def compose_alert(
     text = await _call_yandex(prompt)
     return Alert(text=text, priority=priority, lat=lat, lon=lon)
 
+
 async def _call_yandex(user_prompt: str) -> str:
-    async ith httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             API_URL,
             headers={"Authorization": f"Api-Key {YANDEX_API_KEY}"},
@@ -67,9 +75,9 @@ async def _call_yandex(user_prompt: str) -> str:
                 },
                 "messages": [
                     {"role": "system", "text": SYSTEM_PROMPT},
-                    {"role": "user",   "text": user_prompt},
+                    {"role": "user", "text": user_prompt},
                 ],
             },
         )
     resp.raise_for_status()
-    return resp.json()["result"]["alternatives"][0]["messages"]["text"]
+    return resp.json()["result"]["alternatives"][0]["message"]["text"]

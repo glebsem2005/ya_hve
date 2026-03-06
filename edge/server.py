@@ -7,13 +7,20 @@ from edge.drone.simulated import SimulatedDrone
 from simulator.lora.socket_relay import LoraRelay
 
 MIC_POSITIONS = [
-    MicPosition(lat=float(os.getenv("MIC_A_LAT", 55.7510)),
-                lon=float(os.getenv("MIC_A_LON", 37.6130))),
-    MicPosition(lat=float(os.getenv("MIC_B_LAT", 55.7515)),
-                lon=float(os.getenv("MIC_B_LON", 37.6138))),
-    MicPosition(lat=float(os.getenv("MIC_C_LAT", 55.7508)),
-                lon=float(os.getenv("MIC_C_LON", 37.6142))),
+    MicPosition(
+        lat=float(os.getenv("MIC_A_LAT", 55.7510)),
+        lon=float(os.getenv("MIC_A_LON", 37.6130)),
+    ),
+    MicPosition(
+        lat=float(os.getenv("MIC_B_LAT", 55.7515)),
+        lon=float(os.getenv("MIC_B_LON", 37.6138)),
+    ),
+    MicPosition(
+        lat=float(os.getenv("MIC_C_LAT", 55.7508)),
+        lon=float(os.getenv("MIC_C_LON", 37.6142)),
+    ),
 ]
+
 
 async def run():
     lora = LoraRelay(
@@ -30,20 +37,22 @@ async def run():
     from simulator.audio.mic_stream import MicSimulator
 
     while True:
-        Switch via .env:
-        MIC_MODE=sim      → MicSimulator (default, no hardware needed)
-        MIC_MODE=real     → RealMic (one USB mic plugged in)
-        MIC_MODE=real_3   → RealMicArray (3 USB mics for real TDOA)
+        # Switch via .env:
+        # MIC_MODE=sim      -- MicSimulator (default, no hardware needed)
+        # MIC_MODE=real     -- RealMic (one USB mic plugged in)
+        # MIC_MODE=real_3   -- RealMicArray (3 USB mics for real TDOA)
         mic_mode = os.getenv("MIC_MODE", "sim")
 
         if mic_mode == "real":
             from simulator.audio.real_mic import RealMic
+
             device_id = int(os.getenv("MIC_DEVICE_ID", 0))
             mic = RealMic(device_id=device_id)
             signals, audio_paths = await mic.get_signals()
 
         elif mic_mode == "real_3":
             from simulator.audio.real_mic import RealMicArray
+
             ids = [int(x) for x in os.getenv("MIC_DEVICE_IDS", "0,1,2").split(",")]
             mic = RealMicArray(device_ids=ids)
             signals, audio_paths = await mic.get_signals()
@@ -73,17 +82,18 @@ async def run():
 
             # Send LoRa packet to gateway
             packet = {
-                "class":      audio.label,
+                "class": audio.label,
                 "confidence": audio.confidence,
-                "lat":        location.lat,
-                "lon":        location.lon,
-                "priority":   decision.priority,
-                "photo_b64":  photo.b64,
+                "lat": location.lat,
+                "lon": location.lon,
+                "priority": decision.priority,
+                "photo_b64": photo.b64,
             }
             await lora.send(packet)
             print("LoRa packet sent to gateway")
 
         await asyncio.sleep(30)
+
 
 if __name__ == "__main__":
     asyncio.run(run())

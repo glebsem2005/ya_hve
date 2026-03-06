@@ -2,9 +2,15 @@ import httpx
 import os
 from dataclasses import dataclass
 
-YANDEX_API_KEY   = os.getenv("YANDEX_API_KEY")
+YANDEX_API_KEY = os.getenv("YANDEX_API_KEY")
 YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID")
-API_URL = ""
+# TODO: Yandex Foundation Models Vision API
+# Docs: https://yandex.cloud/docs/foundation-models/
+API_URL = os.getenv(
+    "YANDEX_VISION_URL",
+    "https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
+)
+
 
 @dataclass
 class VisionResult:
@@ -57,6 +63,7 @@ async def classify_photo(photo_b64: str) -> VisionResult:
     raw = raw.strip().removeprefix("```json").removesuffix("```").strip()
 
     import json
+
     data = json.loads(raw)
 
     return VisionResult(
