@@ -1,10 +1,17 @@
 import asyncio
+import logging
 import os
 from edge.audio.classifier import classify
-from edge.tdoa.triangulate import triangulate, MicPosition
+from edge.tdoa.triangulate import triangulate, MicPosition, TriangulationResult
 from edge.decision.decider import decide
 from edge.drone.simulated import SimulatedDrone
 from simulator.lora.socket_relay import LoraRelay
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 MIC_POSITIONS = [
     MicPosition(
@@ -32,67 +39,119 @@ async def run():
         home_lon=MIC_POSITIONS[0].lon,
     )
 
-    print("🖥  Edge server started — listening for audio...")
+    logger.info("Edge server started — listening for audio...")
 
     from simulator.audio.mic_stream import MicSimulator
 
-    while True:
-        # Switch via .env:
-        # MIC_MODE=sim      -- MicSimulator (default, no hardware needed)
-        # MIC_MODE=real     -- RealMic (one USB mic plugged in)
-        # MIC_MODE=real_3   -- RealMicArray (3 USB mics for real TDOA)
-        mic_mode = os.getenv("MIC_MODE", "sim")
+    try:
+        while True:
+            try:
+                mic_mode = os.getenv("MIC_MODE", "sim")
 
-        if mic_mode == "real":
-            from simulator.audio.real_mic import RealMic
+                # --- Acquire signals ---
+                try:
+                    if mic_mode == "real":
+                        from simulator.audio.real_mic import RealMic
 
-            device_id = int(os.getenv("MIC_DEVICE_ID", 0))
-            mic = RealMic(device_id=device_id)
-            signals, audio_paths = await mic.get_signals()
+                        device_id = int(os.getenv("MIC_DEVICE_ID", 0))
+                        mic = RealMic(device_id=device_id)
+                        signals, audio_paths = await mic.get_signals()
 
-        elif mic_mode == "real_3":
-            from simulator.audio.real_mic import RealMicArray
+                    elif mic_mode == "real_3":
+                        from simulator.audio.real_mic import RealMicArray
 
-            ids = [int(x) for x in os.getenv("MIC_DEVICE_IDS", "0,1,2").split(",")]
-            mic = RealMicArray(device_ids=ids)
-            signals, audio_paths = await mic.get_signals()
+                        ids = [
+                            int(x)
+                            for x in os.getenv("MIC_DEVICE_IDS", "0,1,2").split(",")
+                        ]
+                        mic = RealMicArray(device_ids=ids)
+                        signals, audio_paths = await mic.get_signals()
 
-        else:
-            scenario = os.getenv("DEMO_SCENARIO", "chainsaw")
-            mic_sim = MicSimulator(scenario)
-            signals, audio_paths = await mic_sim.get_signals()
+                    else:
+                        scenario = os.getenv("DEMO_SCENARIO", "chainsaw")
+                        mic_sim = MicSimulator(scenario)
+                        signals, audio_paths = await mic_sim.get_signals()
+                except Exception as e:
+                    logger.error("Failed to acquire audio signals: %s", e)
+                    await asyncio.sleep(5)
+                    continue
 
-        audio = classify(audio_paths[0])
-        print(f"{audio.label} ({audio.confidence:.0%})")
+                # --- Classify ---
+                try:
+                    audio = classify(audio_paths[0])
+                except Exception as e:
+                    logger.error("Classification failed: %s", e)
+                    await asyncio.sleep(5)
+                    continue
 
-        location = triangulate(signals, MIC_POSITIONS)
-        print(f"{location.lat:.4f}°N {location.lon:.4f}°E")
+                logger.info("%s (%.0f%%)", audio.label, audio.confidence * 100)
 
-        decision = decide(audio, location)
-        print(f"{decision.reason}")
+                # --- Triangulate ---
+                try:
+                    location = triangulate(signals, MIC_POSITIONS)
+                except Exception as e:
+                    centroid_lat = sum(m.lat for m in MIC_POSITIONS) / len(
+                        MIC_POSITIONS
+                    )
+                    centroid_lon = sum(m.lon for m in MIC_POSITIONS) / len(
+                        MIC_POSITIONS
+                    )
+                    location = TriangulationResult(
+                        lat=centroid_lat, lon=centroid_lon, error_m=999.0
+                    )
+                    logger.warning(
+                        "Triangulation failed, falling back to centroid: %s", e
+                    )
 
-        if decision.send_drone:
-            print("🚁 Launching drone...")
-            await drone.takeoff()
-            async for pos in drone.fly_to(location.lat, location.lon):
-                # In real deployment: broadcast position over LoRa back to gateway
-                print(f"   🚁 {pos.lat:.4f}°N {pos.lon:.4f}°E")
-            photo = await drone.capture_photo()
-            await drone.return_home()
+                logger.info("%.4f°N %.4f°E", location.lat, location.lon)
 
-            # Send LoRa packet to gateway
-            packet = {
-                "class": audio.label,
-                "confidence": audio.confidence,
-                "lat": location.lat,
-                "lon": location.lon,
-                "priority": decision.priority,
-                "photo_b64": photo.b64,
-            }
-            await lora.send(packet)
-            print("LoRa packet sent to gateway")
+                decision = decide(audio, location)
+                logger.info("%s", decision.reason)
 
-        await asyncio.sleep(30)
+                if decision.send_drone:
+                    # --- Drone operations ---
+                    photo = None
+                    try:
+                        await asyncio.wait_for(drone.takeoff(), timeout=10)
+                        async for pos in drone.fly_to(location.lat, location.lon):
+                            logger.info("   Drone at %.4f°N %.4f°E", pos.lat, pos.lon)
+                        photo = await asyncio.wait_for(
+                            drone.capture_photo(), timeout=10
+                        )
+                        await asyncio.wait_for(drone.return_home(), timeout=10)
+                    except asyncio.TimeoutError:
+                        logger.error("Drone operation timed out")
+                        photo = None
+                    except Exception as e:
+                        logger.error("Drone operation failed: %s", e)
+                        photo = None
+
+                    # --- LoRa send ---
+                    packet = {
+                        "class": audio.label,
+                        "confidence": audio.confidence,
+                        "lat": location.lat,
+                        "lon": location.lon,
+                        "priority": decision.priority,
+                        "photo_b64": photo.b64 if photo else None,
+                    }
+                    try:
+                        await asyncio.wait_for(lora.send(packet), timeout=10)
+                        logger.info("LoRa packet sent to gateway")
+                    except asyncio.TimeoutError:
+                        logger.error("LoRa send timed out — packet lost")
+                    except Exception as e:
+                        logger.error("LoRa send failed — packet lost: %s", e)
+
+                await asyncio.sleep(30)
+
+            except Exception as e:
+                logger.critical("Unexpected error in main loop: %s", e)
+                await asyncio.sleep(10)
+
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+        return
 
 
 if __name__ == "__main__":
