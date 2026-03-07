@@ -6,14 +6,18 @@ CONFIDENCE_THRESHOLD = 0.70
 
 PRIORITY_MAP: dict[AudioClass, str] = {
     "chainsaw": "high",
-    "gunshot":  "high",
-    "fire":     "high",
-    "birds":    "low",
-    "silence":  "low",
-    "unknown":  "low",
+    "gunshot": "high",
+    "fire": "high",
+    "axe": "high",  # axe = illegal logging
+    "engine": "medium",  # engine could be ranger vehicle
+    "birds": "low",
+    "silence": "low",
+    "background": "low",
+    "unknown": "low",
 }
 
-SAFE_CLASSES: set[AudioClass] = {"birds", "silence"}
+SAFE_CLASSES: set[AudioClass] = {"birds", "silence", "background"}
+
 
 @dataclass
 class Decision:

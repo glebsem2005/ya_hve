@@ -1,19 +1,23 @@
 import numpy as np
 from scipy.optimize import minimize
-from scipy.signal import correlate
+from scipy.fft import rfft, irfft
 from dataclasses import dataclass
-SPEED_OF_SOUND = 343.0  # m/s at ~20°C
+
+SPEED_OF_SOUND = 343.0  # m/s at ~20C
+
 
 @dataclass
 class MicPosition:
     lat: float
     lon: float
 
+
 @dataclass
 class TriangulationResult:
     lat: float
     lon: float
     error_m: float
+
 
 def _latlon_to_meters(lat1, lon1, lat2, lon2) -> tuple[float, float]:
     R = 6371000
@@ -23,6 +27,7 @@ def _latlon_to_meters(lat1, lon1, lat2, lon2) -> tuple[float, float]:
     y = dlat * R
     return x, y
 
+
 def _meters_to_latlon(lat0, lon0, dx, dy) -> tuple[float, float]:
     R = 6371000
     dlat = np.degrees(dy / R)
@@ -31,9 +36,28 @@ def _meters_to_latlon(lat0, lon0, dx, dy) -> tuple[float, float]:
 
 
 def _estimate_tdoa(sig_a: np.ndarray, sig_b: np.ndarray, sr: int) -> float:
-    corr = correlate(sig_a, sig_b, mode="full")
-    lag_samples = corr.argmax() - (len(sig_b) - 1)
-    return lag_samples / sr
+    # GCC-PHAT with beta=0.75 (soft whitening)
+    n = len(sig_a) + len(sig_b) - 1
+    SIG_A = rfft(sig_a, n)
+    SIG_B = rfft(sig_b, n)
+    R = SIG_A * np.conj(SIG_B)
+    denom = np.abs(R) ** 0.75 + 1e-10
+    cc = irfft(R / denom, n)
+
+    # No abs() — avoid promoting anti-correlation multipath peaks
+    peak = int(np.argmax(cc))
+
+    # Subpixel quadratic (parabolic) interpolation
+    if 0 < peak < len(cc) - 1:
+        y_m = float(cc[peak - 1])
+        y_0 = float(cc[peak])
+        y_p = float(cc[peak + 1])
+        denom_q = y_m - 2 * y_0 + y_p
+        if abs(denom_q) > 1e-10:
+            peak = peak + 0.5 * (y_m - y_p) / denom_q
+
+    lag = peak - (len(sig_b) - 1)
+    return lag / sr
 
 
 def triangulate(
@@ -56,14 +80,14 @@ def triangulate(
     tdoa_ab = _estimate_tdoa(sig_a, sig_b, sample_rate)
     tdoa_ac = _estimate_tdoa(sig_a, sig_c, sample_rate)
 
-    d_ab = tdoa_ab * SPEED_OF_SOUND  # distance difference A-B
-    d_ac = tdoa_ac * SPEED_OF_SOUND  # distance difference A-C
+    d_ab = tdoa_ab * SPEED_OF_SOUND
+    d_ac = tdoa_ac * SPEED_OF_SOUND
 
     def cost(pos):
         x, y = pos
         da = np.sqrt(x**2 + y**2)
-        db = np.sqrt((x - bx)**2 + (y - by)**2)
-        dc = np.sqrt((x - cx)**2 + (y - cy)**2)
+        db = np.sqrt((x - bx) ** 2 + (y - by) ** 2)
+        dc = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
         err_ab = (da - db) - d_ab
         err_ac = (da - dc) - d_ac
         return err_ab**2 + err_ac**2
@@ -71,8 +95,9 @@ def triangulate(
     x0 = mics_m[:, 0].mean()
     y0 = mics_m[:, 1].mean()
 
-    result = minimize(cost, [x0, y0], method="Nelder-Mead",
-                      options={"xatol": 0.1, "fatol": 0.01})
+    result = minimize(
+        cost, [x0, y0], method="Nelder-Mead", options={"xatol": 0.1, "fatol": 0.01}
+    )
 
     src_x, src_y = result.x
     src_lat, src_lon = _meters_to_latlon(lat0, lon0, src_x, src_y)

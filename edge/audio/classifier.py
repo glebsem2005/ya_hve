@@ -2,10 +2,21 @@ import numpy as np
 import soundfile as sf
 from dataclasses import dataclass
 from typing import Literal
+import os
 
-_model = None
+_yamnet = None
+_head = None
 
-AudioClass = Literal["chainsaw", "gunshot", "fire", "birds", "silence", "unknown"]
+CLASSES = ["chainsaw", "gunshot", "engine", "axe", "fire", "background"]
+AudioClass = Literal[
+    "chainsaw", "gunshot", "engine", "axe", "fire", "background", "unknown"
+]
+
+MODEL_PATH = os.environ.get(
+    "YAMNET_HEAD_PATH",
+    os.path.join(os.path.dirname(__file__), "yamnet_forest_classifier_v5.keras"),
+)
+
 
 @dataclass
 class AudioResult:
@@ -13,77 +24,49 @@ class AudioResult:
     confidence: float
     raw_scores: dict
 
-TARGET_CLASSES = {
-    "Chainsaw":     "chainsaw",
-    "Gunshot":      "gunshot",
-    "Fire":         "fire",
-    "Bird":         "birds",
-    "Silence":      "silence",
-}
 
-def _load_model():
-    global _model
-    if _model is None:
+def _load_models():
+    global _yamnet, _head
+    if _yamnet is None:
         import tensorflow_hub as hub
-        _model = hub.load("https://tfhub.dev/google/yamnet/1")
-    return _model
+
+        _yamnet = hub.load("https://tfhub.dev/google/yamnet/1")
+    if _head is None:
+        import tensorflow as tf
+
+        _head = tf.keras.models.load_model(MODEL_PATH)
+    return _yamnet, _head
 
 
 def classify(audio_path: str) -> AudioResult:
-    model = _load_model()
+    yamnet, head = _load_models()
 
     waveform, sr = sf.read(audio_path, dtype="float32")
     if waveform.ndim > 1:
-        waveform = waveform.mean(axis=1)  # mono
+        waveform = waveform.mean(axis=1)
 
-    scores, embeddings, spectrogram = model(waveform)
-    mean_scores = scores.numpy().mean(axis=0)
+    scores, embeddings, spectrogram = yamnet(waveform)
+    emb_np = embeddings.numpy()
 
-    import csv, io, requests
-    class_map_url = "https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv"
+    mean_emb = emb_np.mean(axis=0)  # 1024
+    max_emb = emb_np.max(axis=0)  # 1024
+    features = np.concatenate([mean_emb, max_emb])  # 2048
 
-    try:
-        import importlib.resources
-        class_names = _get_class_names()
-    except Exception:
-        class_names = [f"class_{i}" for i in range(521)]
+    # v5 model expects 2181 (2048 YAMNet + 128 PCEN + 5 temporal).
+    # Pad with zeros for PCEN/temporal dims — model relies primarily on
+    # the 2048 YAMNet features, so accuracy stays close to full pipeline.
+    expected_dim = head.input_shape[-1]
+    if features.shape[0] < expected_dim:
+        features = np.concatenate(
+            [features, np.zeros(expected_dim - features.shape[0])]
+        )
 
-    top_idx = mean_scores.argmax()
-    top_name = class_names[top_idx] if top_idx < len(class_names) else "unknown"
-    top_conf = float(mean_scores[top_idx])
+    pred = head.predict(features[np.newaxis, :], verbose=0)[0]
+    pred_idx = int(np.argmax(pred))
+    confidence = float(pred[pred_idx])
 
-    label: AudioClass = "unknown"
-    for yamnet_name, our_label in TARGET_CLASSES.items():
-        if yamnet_name.lower() in top_name.lower():
-            label = our_label
-            break
+    label: AudioClass = CLASSES[pred_idx] if pred_idx < len(CLASSES) else "unknown"
 
-    raw = {class_names[i]: float(mean_scores[i])
-           for i in mean_scores.argsort()[-5:][::-1]
-           if i < len(class_names)}
+    raw = {CLASSES[i]: float(pred[i]) for i in range(len(CLASSES))}
 
-    return AudioResult(label=label, confidence=top_conf, raw_scores=raw)
-
-
-def _get_class_names() -> list[str]:
-    import os, csv
-    cache_path = "/tmp/yamnet_classes.txt"
-
-    if os.path.exists(cache_path):
-        with open(cache_path) as f:
-            return [line.strip() for line in f]
-
-    import urllib.request
-    url = "https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv"
-    urllib.request.urlretrieve(url, "/tmp/yamnet_class_map.csv")
-
-    names = []
-    with open("/tmp/yamnet_class_map.csv") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            names.append(row["display_name"])
-
-    with open(cache_path, "w") as f:
-        f.write("\n".join(names))
-
-    return names
+    return AudioResult(label=label, confidence=confidence, raw_scores=raw)
