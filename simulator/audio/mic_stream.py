@@ -5,7 +5,7 @@ from pathlib import Path
 
 DEMO_AUDIO_DIR = Path(__file__).parent.parent.parent / "demo" / "audio"
 SPEED_OF_SOUND = 343.0
-SAMPLE_RATE    = 16000
+SAMPLE_RATE = 16000
 
 MIC_DISTANCES = {
     "A": 0,
@@ -15,7 +15,6 @@ MIC_DISTANCES = {
 
 
 class MicSimulator:
-
     def __init__(self, scenario: str = "chainsaw"):
         self.scenario = scenario
 
@@ -31,7 +30,12 @@ class MicSimulator:
         if not audio_file.exists():
             audio_file = DEMO_AUDIO_DIR / "silence.wav"
 
-        waveform, sr = sf.read(str(audio_file), dtype="float32")
+        if audio_file.exists():
+            waveform, sr = sf.read(str(audio_file), dtype="float32")
+        else:
+            # Last-resort fallback: generate silence in memory
+            waveform = np.zeros(SAMPLE_RATE * 5, dtype=np.float32)
+            sr = SAMPLE_RATE
         if waveform.ndim > 1:
             waveform = waveform.mean(axis=1)
 
@@ -50,9 +54,8 @@ class MicSimulator:
 
             # Write to temp file for YAMNet
             import tempfile, os
-            tmp = tempfile.NamedTemporaryFile(
-                suffix=f"_mic_{mic_id}.wav", delete=False
-            )
+
+            tmp = tempfile.NamedTemporaryFile(suffix=f"_mic_{mic_id}.wav", delete=False)
             sf.write(tmp.name, delayed, SAMPLE_RATE)
             paths.append(tmp.name)
 

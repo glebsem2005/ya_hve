@@ -17,7 +17,7 @@ services:
 
   edge:
     build: .
-    command: python -m edge.server
+    command: sh -c "python demo/generate_audio.py && python -m edge.server"
     env_file:
       - .env
     volumes:
