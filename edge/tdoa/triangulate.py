@@ -36,8 +36,15 @@ def _meters_to_latlon(lat0, lon0, dx, dy) -> tuple[float, float]:
 
 
 def _estimate_tdoa(sig_a: np.ndarray, sig_b: np.ndarray, sr: int) -> float:
+    # TDOA-01: pad signals to equal length
+    max_len = max(len(sig_a), len(sig_b))
+    if len(sig_a) < max_len:
+        sig_a = np.pad(sig_a, (0, max_len - len(sig_a)))
+    if len(sig_b) < max_len:
+        sig_b = np.pad(sig_b, (0, max_len - len(sig_b)))
+
     # GCC-PHAT with beta=0.75 (soft whitening)
-    n = len(sig_a) + len(sig_b) - 1
+    n = 2 * max_len - 1
     SIG_A = rfft(sig_a, n)
     SIG_B = rfft(sig_b, n)
     R = SIG_A * np.conj(SIG_B)
@@ -56,7 +63,7 @@ def _estimate_tdoa(sig_a: np.ndarray, sig_b: np.ndarray, sr: int) -> float:
         if abs(denom_q) > 1e-10:
             peak = peak + 0.5 * (y_m - y_p) / denom_q
 
-    lag = peak - (len(sig_b) - 1)
+    lag = peak - (max_len - 1)
     return lag / sr
 
 

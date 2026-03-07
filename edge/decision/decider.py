@@ -8,15 +8,13 @@ PRIORITY_MAP: dict[AudioClass, str] = {
     "chainsaw": "high",
     "gunshot": "high",
     "fire": "high",
-    "axe": "high",  # axe = illegal logging
-    "engine": "medium",  # engine could be ranger vehicle
-    "birds": "low",
-    "silence": "low",
+    "axe": "high",
+    "engine": "medium",
     "background": "low",
     "unknown": "low",
 }
 
-SAFE_CLASSES: set[AudioClass] = {"birds", "silence", "background"}
+SAFE_CLASSES: set[AudioClass] = {"background"}
 
 
 @dataclass
