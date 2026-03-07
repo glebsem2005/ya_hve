@@ -14,3 +14,5 @@ python-dotenv>=1.0
 aiofiles>=23.2
 pymavlink>=2.4
 pydantic>=2.0
+
+pytest>=7.4
