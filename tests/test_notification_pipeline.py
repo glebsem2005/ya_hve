@@ -74,11 +74,20 @@ def _fresh_state(tmp_path, monkeypatch):
 def _register_varnavino_ranger(name: str, chat_id: int):
     """Register a ranger for Varnavino district."""
     d = DISTRICTS["varnavino"]
-    return add_ranger(name, chat_id, d.lat_min, d.lat_max, d.lon_min, d.lon_max)
+    return add_ranger(
+        name,
+        chat_id,
+        zone_lat_min=d.lat_min,
+        zone_lat_max=d.lat_max,
+        zone_lon_min=d.lon_min,
+        zone_lon_max=d.lon_max,
+    )
 
 
 def _audio(label: str, confidence: float = 0.92) -> AudioResult:
-    scores = {k: 0.0 for k in ["chainsaw", "gunshot", "engine", "axe", "fire", "background"]}
+    scores = {
+        k: 0.0 for k in ["chainsaw", "gunshot", "engine", "axe", "fire", "background"]
+    }
     if label in scores:
         scores[label] = confidence
     return AudioResult(label=label, confidence=confidence, raw_scores=scores)
@@ -189,9 +198,7 @@ class TestTelegramDelivery:
         bot = MagicMock()
         bot.send_message = AsyncMock()
         bot.send_photo = AsyncMock()
-        monkeypatch.setattr(
-            "cloud.notify.telegram.Bot", lambda token: bot
-        )
+        monkeypatch.setattr("cloud.notify.telegram.Bot", lambda token: bot)
         return bot
 
     @pytest.mark.asyncio
@@ -286,11 +293,15 @@ class TestScenarioIllegalLogging:
         waveform = np.concatenate([silence, burst])
 
         event = detector.detect(waveform, 16000)
-        assert event.triggered, f"Chainsaw should trigger onset (ratio={event.energy_ratio:.1f})"
+        assert event.triggered, (
+            f"Chainsaw should trigger onset (ratio={event.energy_ratio:.1f})"
+        )
 
     def test_decider_sends_drone(self):
         """Chainsaw at 92% confidence, no permit -> send drone."""
-        decision = decide(_audio("chainsaw", 0.92), _location(VARNAVINO_LAT, VARNAVINO_LON))
+        decision = decide(
+            _audio("chainsaw", 0.92), _location(VARNAVINO_LAT, VARNAVINO_LON)
+        )
         assert decision.send_drone is True
         assert decision.send_lora is True
         assert decision.priority == "high"
@@ -336,7 +347,9 @@ class TestScenarioGunshot:
     def test_gunshot_ignores_permit(self):
         """Gunshot in zone with logging permit -> STILL alerts."""
         add_permit(57.0, 57.5, 44.5, 45.5, TODAY, NEXT_MONTH, "Рубка")
-        decision = decide(_audio("gunshot", 0.95), _location(VARNAVINO_LAT, VARNAVINO_LON))
+        decision = decide(
+            _audio("gunshot", 0.95), _location(VARNAVINO_LAT, VARNAVINO_LON)
+        )
 
         assert decision.send_drone is True
         assert decision.priority == "high"
@@ -355,12 +368,16 @@ class TestScenarioFalsePositive:
 
     def test_background_noise_ignored(self):
         """Background audio -> no drone, no alert."""
-        decision = decide(_audio("background", 0.95), _location(VARNAVINO_LAT, VARNAVINO_LON))
+        decision = decide(
+            _audio("background", 0.95), _location(VARNAVINO_LAT, VARNAVINO_LON)
+        )
         assert decision.send_drone is False
 
     def test_low_confidence_ignored(self):
         """Chainsaw at 40% confidence -> too uncertain, no alert."""
-        decision = decide(_audio("chainsaw", 0.40), _location(VARNAVINO_LAT, VARNAVINO_LON))
+        decision = decide(
+            _audio("chainsaw", 0.40), _location(VARNAVINO_LAT, VARNAVINO_LON)
+        )
         assert decision.send_drone is False
         assert "confidence" in decision.reason.lower()
 

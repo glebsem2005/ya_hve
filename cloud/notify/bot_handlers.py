@@ -52,6 +52,13 @@ from cloud.notify.telegram import (
 
 logger = logging.getLogger(__name__)
 
+# ---------- Registration state (manual, no ConversationHandler) ----------
+
+_registration_state: dict[int, dict] = {}
+_REG_STEP_NAME = "awaiting_name"
+_REG_STEP_BADGE = "awaiting_badge"
+_REG_TTL = 1800  # 30 minutes
+
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Distance in meters between two GPS points."""
@@ -113,33 +120,18 @@ async def district_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     chat_id = query.message.chat_id
-    user = query.from_user
-    name = user.full_name or user.username or str(chat_id)
 
     if get_ranger_by_chat_id(chat_id):
         await query.edit_message_text("Вы уже зарегистрированы! /status")
         return
 
-    try:
-        add_ranger(
-            name=name,
-            chat_id=chat_id,
-            zone_lat_min=district.lat_min,
-            zone_lat_max=district.lat_max,
-            zone_lon_min=district.lon_min,
-            zone_lon_max=district.lon_max,
-        )
-    except Exception:
-        logger.exception("Failed to register ranger chat_id=%s", chat_id)
-        await query.edit_message_text("Ошибка регистрации. Попробуйте позже.")
-        return
-
+    _registration_state[chat_id] = {
+        "step": _REG_STEP_NAME,
+        "district_slug": slug,
+        "started_at": time.time(),
+    }
     await query.edit_message_text(
-        f"Вы зарегистрированы!\n\n"
-        f"Лесничество: {district.name_ru}\n"
-        f"Регион: {district.region_ru}\n\n"
-        "Вы будете получать оповещения о подозрительной активности "
-        "в вашей зоне. Используйте /stop для отключения."
+        f"Лесничество: {district.name_ru}\n\nВведите ваше ФИО (фамилия, имя, отчество):"
     )
 
 
@@ -155,8 +147,12 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     state = "включены" if ranger.active else "отключены"
+    badge_line = (
+        f"Табельный номер: {ranger.badge_number}\n" if ranger.badge_number else ""
+    )
     await update.message.reply_text(
-        f"Имя: {ranger.name}\n"
+        f"ФИО: {ranger.name}\n"
+        f"{badge_line}"
         f"Зона: {ranger.zone_lat_min:.2f}--{ranger.zone_lat_max:.2f} N, "
         f"{ranger.zone_lon_min:.2f}--{ranger.zone_lon_max:.2f} E\n"
         f"Оповещения: {state}"
@@ -225,8 +221,8 @@ async def accept_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     chat_id = query.message.chat_id
-    user = query.from_user
-    name = user.full_name or user.username or str(chat_id)
+    ranger = get_ranger_by_chat_id(chat_id)
+    name = ranger.name if ranger else (query.from_user.full_name or str(chat_id))
 
     # Update incident
     incident.status = "accepted"
@@ -436,16 +432,82 @@ async def handle_inspector_photo(
 
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text message as ranger report if on_site."""
+    """Handle text message — registration flow or ranger report if on_site."""
     chat_id = update.effective_chat.id
+    text = update.message.text
+    if not text or text.startswith("/"):
+        return
+
+    # --- Registration flow ---
+    reg = _registration_state.get(chat_id)
+    if reg:
+        elapsed = time.time() - reg["started_at"]
+        if elapsed > _REG_TTL:
+            _registration_state.pop(chat_id, None)
+            await update.message.reply_text(
+                "Регистрация просрочена. Отправьте /start чтобы начать заново."
+            )
+            return
+
+        if reg["step"] == _REG_STEP_NAME:
+            name = text.strip()
+            if len(name.split()) < 2:
+                await update.message.reply_text(
+                    "Введите полное ФИО (минимум фамилия и имя)."
+                )
+                return
+            reg["name"] = name
+            reg["step"] = _REG_STEP_BADGE
+            await update.message.reply_text("Введите ваш табельный номер:")
+            return
+
+        if reg["step"] == _REG_STEP_BADGE:
+            badge = text.strip()
+            if not badge:
+                await update.message.reply_text("Табельный номер не может быть пустым.")
+                return
+
+            slug = reg["district_slug"]
+            district = DISTRICTS.get(slug)
+            if not district:
+                _registration_state.pop(chat_id, None)
+                await update.message.reply_text(
+                    "Ошибка регистрации. Попробуйте /start."
+                )
+                return
+
+            try:
+                add_ranger(
+                    name=reg["name"],
+                    chat_id=chat_id,
+                    badge_number=badge,
+                    zone_lat_min=district.lat_min,
+                    zone_lat_max=district.lat_max,
+                    zone_lon_min=district.lon_min,
+                    zone_lon_max=district.lon_max,
+                )
+            except Exception:
+                logger.exception("Failed to register ranger chat_id=%s", chat_id)
+                _registration_state.pop(chat_id, None)
+                await update.message.reply_text("Ошибка регистрации. Попробуйте позже.")
+                return
+
+            _registration_state.pop(chat_id, None)
+            await update.message.reply_text(
+                f"Вы зарегистрированы!\n\n"
+                f"ФИО: {reg['name']}\n"
+                f"Табельный номер: {badge}\n"
+                f"Лесничество: {district.name_ru}\n\n"
+                "Вы будете получать оповещения о подозрительной активности "
+                "в вашей зоне. Используйте /stop для отключения."
+            )
+            return
+
+    # --- On-site report ---
     incident = get_active_incident_for_chat(chat_id)
 
     if not incident or incident.status != "on_site":
         return  # Ignore non-contextual text
-
-    text = update.message.text
-    if not text or text.startswith("/"):
-        return
 
     incident.ranger_report_raw = text
     await update.message.reply_text("Описание сохранено.")

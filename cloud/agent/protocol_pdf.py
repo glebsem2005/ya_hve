@@ -16,6 +16,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 from cloud.db.incidents import Incident
+from cloud.db.rangers import get_ranger_by_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,16 @@ def generate_protocol(incident: Incident, legal_articles: str = "") -> bytes:
             new_x="LMARGIN",
             new_y="NEXT",
         )
+        if incident.accepted_by_chat_id:
+            ranger = get_ranger_by_chat_id(incident.accepted_by_chat_id)
+            if ranger and ranger.badge_number:
+                pdf.cell(
+                    0,
+                    7,
+                    text=f"Табельный номер: {ranger.badge_number}",
+                    new_x="LMARGIN",
+                    new_y="NEXT",
+                )
 
     if incident.ranger_photo_b64:
         pdf.set_font(font_name, "B", 10)

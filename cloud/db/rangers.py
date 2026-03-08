@@ -26,6 +26,7 @@ def _db_path() -> str:
 class Ranger:
     id: int
     name: str
+    badge_number: str
     chat_id: int
     zone_lat_min: float
     zone_lat_max: float
@@ -47,6 +48,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS rangers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
+            badge_number TEXT NOT NULL DEFAULT '',
             chat_id INTEGER NOT NULL UNIQUE,
             zone_lat_min REAL NOT NULL DEFAULT 0,
             zone_lat_max REAL NOT NULL DEFAULT 90,
@@ -59,6 +61,20 @@ def init_db() -> None:
     conn.close()
 
 
+def _migrate_db() -> None:
+    """Add columns that may be missing in existing databases."""
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "ALTER TABLE rangers ADD COLUMN badge_number TEXT NOT NULL DEFAULT ''"
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    finally:
+        conn.close()
+
+
 def add_ranger(
     name: str,
     chat_id: int,
@@ -66,13 +82,22 @@ def add_ranger(
     zone_lat_max: float = 90.0,
     zone_lon_min: float = 0.0,
     zone_lon_max: float = 180.0,
+    badge_number: str = "",
 ) -> Ranger:
     """Add a new ranger. Returns the created Ranger."""
     conn = _get_conn()
     cur = conn.execute(
-        """INSERT INTO rangers (name, chat_id, zone_lat_min, zone_lat_max, zone_lon_min, zone_lon_max)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (name, chat_id, zone_lat_min, zone_lat_max, zone_lon_min, zone_lon_max),
+        """INSERT INTO rangers (name, badge_number, chat_id, zone_lat_min, zone_lat_max, zone_lon_min, zone_lon_max)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            name,
+            badge_number,
+            chat_id,
+            zone_lat_min,
+            zone_lat_max,
+            zone_lon_min,
+            zone_lon_max,
+        ),
     )
     ranger_id = cur.lastrowid
     conn.commit()
@@ -80,6 +105,7 @@ def add_ranger(
     return Ranger(
         id=ranger_id,
         name=name,
+        badge_number=badge_number,
         chat_id=chat_id,
         zone_lat_min=zone_lat_min,
         zone_lat_max=zone_lat_max,
@@ -158,9 +184,7 @@ def get_rangers_for_location(lat: float, lon: float) -> list[Ranger]:
 def get_ranger_by_chat_id(chat_id: int) -> Ranger | None:
     """Find a ranger by their Telegram chat ID."""
     conn = _get_conn()
-    row = conn.execute(
-        "SELECT * FROM rangers WHERE chat_id = ?", (chat_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM rangers WHERE chat_id = ?", (chat_id,)).fetchone()
     conn.close()
     return _row_to_ranger(row) if row else None
 
@@ -169,6 +193,7 @@ def _row_to_ranger(row: sqlite3.Row) -> Ranger:
     return Ranger(
         id=row["id"],
         name=row["name"],
+        badge_number=row["badge_number"],
         chat_id=row["chat_id"],
         zone_lat_min=row["zone_lat_min"],
         zone_lat_max=row["zone_lat_max"],
@@ -180,3 +205,4 @@ def _row_to_ranger(row: sqlite3.Row) -> Ranger:
 
 # Auto-init on import
 init_db()
+_migrate_db()
