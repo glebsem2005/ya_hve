@@ -1,0 +1,51 @@
+id,timestamp,lat,lon,audio_class,confidence,gating_level,status,district
+1,2026-03-01 02:13:00,57.051248,45.240668,engine,0.61,log,resolved,Tonkino
+2,2026-03-01 23:28:00,57.301009,45.061245,chainsaw,0.76,verify,resolved,Tonkino
+3,2026-02-09 06:12:00,57.40291,45.198139,gunshot,0.771,verify,resolved,Krasnye Baki
+4,2026-03-05 04:36:00,57.048358,45.347494,chainsaw,0.682,verify,false_alarm,Tonkino
+5,2026-03-04 18:55:00,57.27602,45.329405,chainsaw,0.617,log,resolved,Tonkino
+6,2026-03-06 05:18:00,57.113949,44.789388,fire,0.737,verify,resolved,Varnavino
+7,2026-02-21 19:50:00,57.18509,44.709507,fire,0.929,alert,resolved,Krasnye Baki
+8,2026-02-16 01:26:00,57.364563,44.663402,engine,0.86,alert,resolved,Shakhunya
+9,2026-02-28 20:07:00,57.384157,44.555938,chainsaw,0.952,alert,false_alarm,Varnavino
+10,2026-02-06 20:47:00,57.327719,44.895632,axe,0.752,verify,resolved,Shakhunya
+11,2026-02-18 22:13:00,57.292293,45.397823,chainsaw,0.653,verify,false_alarm,Shakhunya
+12,2026-02-21 04:12:00,57.023558,44.609649,chainsaw,0.979,alert,resolved,Vetluga
+13,2026-02-23 16:27:00,57.125707,45.053226,axe,0.76,verify,resolved,Varnavino
+14,2026-02-11 22:11:00,57.320481,44.611552,engine,0.644,log,pending,Shakhunya
+15,2026-02-12 22:28:00,57.380981,45.007682,chainsaw,0.601,log,false_alarm,Varnavino
+16,2026-02-17 00:51:00,57.186957,44.661549,fire,0.713,verify,false_alarm,Tonkino
+17,2026-03-04 19:04:00,57.492661,45.306775,fire,0.828,verify,resolved,Vetluga
+18,2026-03-05 15:08:00,57.034606,45.260602,chainsaw,0.934,alert,pending,Vetluga
+19,2026-02-27 14:05:00,57.303297,45.464363,chainsaw,0.781,verify,resolved,Tonkino
+20,2026-02-23 19:32:00,57.449807,44.951486,axe,0.862,alert,false_alarm,Vetluga
+21,2026-03-01 00:00:00,57.035497,45.131103,chainsaw,0.728,verify,resolved,Vetluga
+22,2026-02-19 23:43:00,57.334489,44.714237,chainsaw,0.612,log,resolved,Vetluga
+23,2026-02-28 15:09:00,57.20353,44.594326,engine,0.935,alert,resolved,Shakhunya
+24,2026-03-07 03:57:00,57.201311,44.839303,chainsaw,0.756,verify,pending,Varnavino
+25,2026-02-23 01:43:00,57.231314,45.374486,chainsaw,0.672,verify,resolved,Varnavino
+26,2026-03-06 13:07:00,57.007379,44.593263,gunshot,0.927,alert,resolved,Vetluga
+27,2026-02-24 05:50:00,57.189487,45.485309,chainsaw,0.785,verify,resolved,Krasnye Baki
+28,2026-02-13 13:18:00,57.359204,44.654797,fire,0.898,alert,resolved,Krasnye Baki
+29,2026-03-06 20:57:00,57.025071,44.976789,chainsaw,0.622,log,false_alarm,Tonkino
+30,2026-03-03 04:22:00,57.03398,45.361819,chainsaw,0.965,alert,resolved,Shakhunya
+31,2026-02-17 05:21:00,57.040992,45.157373,chainsaw,0.938,alert,resolved,Tonkino
+32,2026-02-13 20:45:00,57.132807,44.630878,gunshot,0.955,alert,resolved,Krasnye Baki
+33,2026-03-07 16:21:00,57.499227,45.496096,gunshot,0.953,alert,pending,Varnavino
+34,2026-02-25 04:04:00,57.122142,44.784987,gunshot,0.792,verify,resolved,Shakhunya
+35,2026-02-10 15:00:00,57.333932,45.054602,axe,0.867,alert,false_alarm,Varnavino
+36,2026-03-04 13:51:00,57.136174,45.10483,fire,0.651,verify,resolved,Krasnye Baki
+37,2026-02-20 22:03:00,57.45408,44.550799,chainsaw,0.841,verify,resolved,Shakhunya
+38,2026-03-03 22:50:00,57.370615,45.05168,axe,0.617,log,resolved,Shakhunya
+39,2026-02-14 02:26:00,57.018014,44.869216,gunshot,0.643,log,pending,Tonkino
+40,2026-02-08 05:03:00,57.178905,45.182067,chainsaw,0.648,log,resolved,Varnavino
+41,2026-02-17 02:01:00,57.464941,45.364606,chainsaw,0.813,verify,pending,Vetluga
+42,2026-02-25 17:09:00,57.334954,45.235058,fire,0.609,log,false_alarm,Vetluga
+43,2026-02-09 05:06:00,57.235345,44.699573,chainsaw,0.899,alert,resolved,Shakhunya
+44,2026-03-01 06:18:00,57.096565,44.828262,chainsaw,0.912,alert,pending,Varnavino
+45,2026-02-23 13:39:00,57.469619,44.615342,background,0.37,log,false_alarm,Krasnye Baki
+46,2026-03-04 17:38:00,57.364273,44.813677,chainsaw,0.966,alert,resolved,Tonkino
+47,2026-03-01 22:58:00,57.354393,44.501691,background,0.329,log,false_alarm,Tonkino
+48,2026-03-01 19:33:00,57.034987,45.164238,engine,0.957,alert,false_alarm,Krasnye Baki
+49,2026-02-07 21:28:00,57.154642,44.908393,engine,0.852,alert,resolved,Shakhunya
+50,2026-02-14 18:17:00,57.374067,44.674027,engine,0.811,verify,resolved,Tonkino

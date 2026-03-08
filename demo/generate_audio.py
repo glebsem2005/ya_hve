@@ -79,6 +79,37 @@ def generate_gunshot():
     _save("gunshot.wav", np.clip(impulse, -1.0, 1.0))
 
 
+def generate_engine():
+    """Low-frequency hum 60-120 Hz with noise — vehicle/machinery engine.
+
+    Structure: 1.0s quiet forest ambience -> 50ms fade-in -> 4.0s engine drone.
+    """
+    rng = np.random.default_rng(99)
+    quiet_len = int(1.0 * SAMPLE_RATE)
+    fade_len = int(0.05 * SAMPLE_RATE)
+    engine_len = N_SAMPLES - quiet_len
+
+    quiet = rng.normal(0, 0.005, quiet_len).astype(np.float32)
+
+    t = np.linspace(0, engine_len / SAMPLE_RATE, engine_len, endpoint=False)
+    # Fundamental 80 Hz + harmonics at 120 Hz, slight vibrato
+    freq1 = 80 + 5 * np.sin(2 * np.pi * 0.3 * t)
+    freq2 = 120 + 8 * np.sin(2 * np.pi * 0.5 * t)
+    phase1 = np.cumsum(freq1 / SAMPLE_RATE)
+    phase2 = np.cumsum(freq2 / SAMPLE_RATE)
+    tone1 = np.sin(2 * np.pi * phase1)
+    tone2 = 0.5 * np.sin(2 * np.pi * phase2)
+    noise = rng.normal(0, 0.15, engine_len)
+    engine = (0.5 * tone1 + 0.3 * tone2 + 0.2 * noise).astype(np.float32)
+
+    fade = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
+    engine[:fade_len] *= fade
+
+    mixed = np.concatenate([quiet, engine])
+    mixed = np.clip(mixed, -1.0, 1.0).astype(np.float32)
+    _save("engine.wav", mixed)
+
+
 def generate_normal():
     """Low-amplitude pink-ish noise — ambient forest."""
     rng = np.random.default_rng(0)
@@ -92,6 +123,7 @@ def main():
     generate_silence()
     generate_chainsaw()
     generate_gunshot()
+    generate_engine()
     generate_normal()
     print("Done.")
 

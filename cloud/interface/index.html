@@ -3,183 +3,804 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ForestGuard</title>
+    <title>ФАВН — Мониторинг леса</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: system-ui, -apple-system, sans-serif; display: flex; height: 100vh; }
-        #map { flex: 1; }
-        #panel {
-            width: 360px; background: #1a1a2e; color: #eee;
-            overflow-y: auto; padding: 16px; display: flex; flex-direction: column;
+        body {
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            background: #0a0a0f;
+            color: #c8c8d0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
-        #panel h2 { margin-bottom: 12px; color: #4ade80; font-size: 18px; }
-        .event {
-            background: #16213e; border-radius: 8px;
-            padding: 10px; margin-bottom: 8px; font-size: 13px;
-            border-left: 4px solid #334155;
+
+        /* ---- Header ---- */
+        .header {
+            height: 40px;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            border-bottom: 1px solid #1a1e2a;
+            background: #0d0d14;
+            flex-shrink: 0;
+            gap: 12px;
         }
-        .event .label { color: #22d3ee; font-weight: bold; }
-        .event.high { border-left-color: #ef4444; }
-        .event.medium { border-left-color: #f59e0b; }
-        .event.low { border-left-color: #4ade80; }
-        #controls { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
-        #controls button {
-            padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer;
-            background: #0f3460; color: #fff; font-size: 13px; transition: background 0.2s;
+        .logo {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: #e0e0e8;
         }
-        #controls button:hover { background: #e94560; }
-        #status {
-            font-size: 12px; color: #888; margin-bottom: 12px;
-            display: flex; align-items: center; gap: 6px;
+        .ws-status {
+            font-size: 11px;
+            color: #ff2020;
+            margin-left: 8px;
         }
-        #status .dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            background: #ef4444; display: inline-block;
+        .ws-status.ok { color: #00ff41; }
+        .header-spacer { flex: 1; }
+        .demo-btns {
+            display: flex;
+            gap: 4px;
         }
-        #status.connected .dot { background: #4ade80; }
-        #events { flex: 1; overflow-y: auto; }
+        .demo-btns button {
+            padding: 4px 10px;
+            border: 1px solid #1a1e2a;
+            background: #111318;
+            color: #888;
+            font-family: inherit;
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            cursor: pointer;
+            border-radius: 1px;
+            transition: all 0.15s;
+        }
+        .demo-btns button:hover {
+            border-color: #ff2020;
+            color: #ff2020;
+        }
+
+        /* ---- Main grid ---- */
+        .main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            overflow: hidden;
+        }
+
+        /* ---- Map ---- */
+        .map-wrap {
+            position: relative;
+            overflow: hidden;
+        }
+        #map { width: 100%; height: 100%; }
+
+        /* ---- Events log overlay ---- */
+        .events-log {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            z-index: 1000;
+            max-height: 180px;
+            width: 380px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column-reverse;
+            pointer-events: none;
+        }
+        .ev-line {
+            padding: 2px 6px;
+            background: rgba(10, 10, 15, 0.88);
+            font-size: 11px;
+            line-height: 1.5;
+            border-left: 2px solid #1a1e2a;
+        }
+        .ev-line.high { border-left-color: #ff2020; }
+        .ev-line.medium { border-left-color: #ffaa00; }
+        .ev-line.low { border-left-color: #00ff41; }
+        .ev-time { color: #555; }
+        .ev-tag { color: #ffaa00; font-weight: 600; }
+        .ev-line.high .ev-tag { color: #ff2020; }
+        .ev-line.low .ev-tag { color: #00ff41; }
+
+        /* ---- Sidebar ---- */
+        .sidebar {
+            background: #0d0d14;
+            border-left: 1px solid #1a1e2a;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .sb-section {
+            border-bottom: 1px solid #1a1e2a;
+            padding: 12px 14px;
+        }
+        .sb-section:last-child { border-bottom: none; }
+        .sb-label {
+            font-size: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #555;
+            margin-bottom: 6px;
+        }
+        .sb-empty {
+            padding: 40px 14px;
+            text-align: center;
+            color: #333;
+            font-size: 12px;
+        }
+
+        /* Detection section */
+        .detect-class {
+            font-size: 16px;
+            font-weight: 700;
+            color: #e0e0e8;
+        }
+        .detect-conf {
+            margin-top: 4px;
+            font-size: 12px;
+        }
+        .conf-bar {
+            font-family: inherit;
+            letter-spacing: -1px;
+            color: #00ff41;
+        }
+        .conf-bar.high { color: #ff2020; }
+        .conf-bar.warn { color: #ffaa00; }
+        .detect-level {
+            display: inline-block;
+            margin-top: 4px;
+            padding: 2px 8px;
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            border: 1px solid;
+            border-radius: 1px;
+        }
+        .level-alert { border-color: #ff2020; color: #ff2020; background: rgba(255,32,32,0.1); }
+        .level-verify { border-color: #ffaa00; color: #ffaa00; background: rgba(255,170,0,0.1); }
+        .level-log { border-color: #00ff41; color: #00ff41; background: rgba(0,255,65,0.1); }
+
+        /* Triangulation section */
+        .tri-coords {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e0e0e8;
+        }
+        .tri-error {
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        /* Drone photo */
+        .drone-photo {
+            width: 100%;
+            max-height: 200px;
+            object-fit: cover;
+            border: 1px solid #1a1e2a;
+            border-radius: 1px;
+        }
+
+        /* Vision */
+        .vision-desc {
+            font-size: 12px;
+            color: #c8c8d0;
+            line-height: 1.5;
+            margin-bottom: 6px;
+        }
+        .vision-flags {
+            display: flex;
+            gap: 8px;
+            font-size: 11px;
+        }
+        .vision-flag {
+            padding: 2px 6px;
+            border: 1px solid #1a1e2a;
+            border-radius: 1px;
+        }
+        .vision-flag.yes { border-color: #ff2020; color: #ff2020; }
+        .vision-flag.no { border-color: #333; color: #444; }
+
+        /* Alert / GPT text */
+        .gpt-text {
+            font-size: 12px;
+            color: #c8c8d0;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        /* RAG button */
+        .rag-btn {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            margin-top: 8px;
+            border: 1px solid #1a1e2a;
+            background: #111318;
+            color: #888;
+            font-family: inherit;
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            cursor: pointer;
+            border-radius: 1px;
+            transition: all 0.15s;
+        }
+        .rag-btn:hover {
+            border-color: #00ff41;
+            color: #00ff41;
+        }
+        .rag-btn:disabled {
+            opacity: 0.4;
+            cursor: wait;
+        }
+        .rag-response {
+            margin-top: 8px;
+            padding: 8px;
+            background: #111318;
+            border: 1px solid #1a1e2a;
+            font-size: 11px;
+            line-height: 1.6;
+            color: #00ff41;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        /* Protocol link */
+        .proto-link {
+            color: #555;
+            font-size: 11px;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .proto-link:hover { color: #888; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #1a1e2a; }
+
+        /* Leaflet overrides */
+        .leaflet-control-zoom { display: none !important; }
+        .leaflet-control-attribution { display: none !important; }
+        .dark-popup .leaflet-popup-content-wrapper {
+            background: #111318;
+            color: #ccc;
+            border-radius: 2px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+        .dark-popup .leaflet-popup-tip { background: #111318; }
+        .leaflet-popup-close-button { color: #555 !important; }
+        @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
     </style>
 </head>
 <body>
-    <div id="map"></div>
-    <div id="panel">
-        <h2>ForestGuard</h2>
-        <div id="controls">
-            <button onclick="startDemo('chainsaw')">Бензопила</button>
-            <button onclick="startDemo('gunshot')">Выстрел</button>
-            <button onclick="startDemo('normal')">Птицы</button>
+    <div class="header">
+        <span class="logo">ФАВН</span>
+        <span class="ws-status" id="ws-status">&#9679; ОТКЛ</span>
+        <span class="header-spacer"></span>
+        <div class="demo-btns">
+            <button onclick="startDemo('chainsaw')">БНЗ</button>
+            <button onclick="startDemo('gunshot')">ВЫСТ</button>
+            <button onclick="startDemo('engine')">ДВИГ</button>
+            <button onclick="startDemo('normal')">ФОН</button>
         </div>
-        <div id="status"><span class="dot"></span> <span id="status-text">Отключено</span></div>
-        <div id="events"></div>
+    </div>
+
+    <div class="main">
+        <div class="map-wrap">
+            <div id="map"></div>
+            <div class="events-log" id="events-log"></div>
+        </div>
+        <div class="sidebar" id="sidebar">
+            <div class="sb-empty" id="sb-empty">Ожидание инцидента...</div>
+        </div>
     </div>
 
     <script>
-        /* ---- Leaflet map ---- */
-        const map = L.map('map').setView([55.751, 37.613], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap'
+    (function() {
+        'use strict';
+
+        /* ---- State ---- */
+        var incident = {};
+        var mapLayers = [];
+        var droneMarker = null;
+        var activeMics = [];
+
+        /* ---- Helpers ---- */
+        function escHtml(s) {
+            var d = document.createElement('div');
+            d.textContent = s || '';
+            return d.innerHTML;
+        }
+
+        var CLASS_RU = {
+            'chainsaw': 'Бензопила', 'gunshot': 'Выстрел', 'engine': 'Двигатель',
+            'axe': 'Топор', 'birds': 'Птицы', 'silence': 'Тишина',
+            'rain': 'Дождь', 'wind': 'Ветер'
+        };
+        function classRu(c) { return CLASS_RU[c] || c; }
+
+        function ts() {
+            var n = new Date();
+            return n.getHours().toString().padStart(2,'0') + ':' +
+                   n.getMinutes().toString().padStart(2,'0') + ':' +
+                   n.getSeconds().toString().padStart(2,'0');
+        }
+
+        function haversine(lat1, lon1, lat2, lon2) {
+            var R = 6371000;
+            var p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180;
+            var dp = (lat2 - lat1) * Math.PI / 180;
+            var dl = (lon2 - lon1) * Math.PI / 180;
+            var a = Math.sin(dp/2)*Math.sin(dp/2) + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function confBar(conf) {
+            var pct = Math.round(conf * 100);
+            var filled = Math.round(conf * 12);
+            var bar = '\u2588'.repeat(filled) + '\u2591'.repeat(12 - filled);
+            var cls = pct >= 80 ? 'conf-bar high' : pct >= 50 ? 'conf-bar warn' : 'conf-bar';
+            return '<span class="' + cls + '">' + bar + '</span> ' + pct + '%';
+        }
+
+        function confLevel(conf) {
+            var pct = conf * 100;
+            if (pct >= 80) return '<span class="detect-level level-alert">ТРЕВОГА</span>';
+            if (pct >= 50) return '<span class="detect-level level-verify">ПРОВЕРКА</span>';
+            return '<span class="detect-level level-log">ЛОГ</span>';
+        }
+
+        /* ---- Map ---- */
+        var map = L.map('map', { zoomControl: false, attributionControl: false })
+                   .setView([57.30, 44.90], 10);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            subdomains: 'abcd', maxZoom: 19
         }).addTo(map);
 
-        const markers = {};
-        const eventsDiv = document.getElementById('events');
-        const statusDiv = document.getElementById('status');
-        const statusText = document.getElementById('status-text');
+        /* ---- Load microphones ---- */
+        fetch('/api/v1/mics').then(function(r) { return r.json(); }).then(function(mics) {
+            var bounds = [];
+            mics.forEach(function(m) {
+                var color, iconHtml;
+                if (m.status === 'online') {
+                    color = '#00ff41';
+                    iconHtml = '<div style="width:10px;height:10px;border-radius:50%;background:#00ff41;border:1px solid rgba(0,128,32,0.5);"></div>';
+                } else if (m.status === 'offline') {
+                    color = '#444';
+                    iconHtml = '<div style="width:8px;height:8px;border-radius:50%;background:#444;border:1px solid rgba(34,34,34,0.5);"></div>';
+                } else {
+                    color = '#ff2020';
+                    iconHtml = '<div style="width:10px;height:10px;font-size:12px;color:#ff2020;text-align:center;line-height:10px;font-weight:bold;">\u00d7</div>';
+                }
+                var icon = L.divIcon({ html: iconHtml, iconSize: [10, 10], className: '' });
+                var marker = L.marker([m.lat, m.lon], { icon: icon }).addTo(map);
+                var bat = m.battery_pct !== undefined ? m.battery_pct.toFixed(0) + '%' : '?';
+                var popupEl = document.createElement('div');
+                popupEl.style.cssText = 'font-family:monospace;font-size:11px;line-height:1.6;';
+                var b = document.createElement('b');
+                b.textContent = m.mic_uid;
+                popupEl.appendChild(b);
+                popupEl.appendChild(document.createElement('br'));
+                var statusSpan = document.createElement('span');
+                statusSpan.style.color = color;
+                statusSpan.textContent = m.status.toUpperCase();
+                popupEl.appendChild(document.createTextNode('Статус: '));
+                popupEl.appendChild(statusSpan);
+                popupEl.appendChild(document.createElement('br'));
+                popupEl.appendChild(document.createTextNode('Зона: ' + (m.zone_type || '?')));
+                popupEl.appendChild(document.createElement('br'));
+                popupEl.appendChild(document.createTextNode('Батарея: ' + bat));
+                popupEl.appendChild(document.createElement('br'));
+                popupEl.appendChild(document.createTextNode('Участок: ' + (m.sub_district || '?')));
+                marker.bindPopup(popupEl, { className: 'dark-popup' });
+                bounds.push([m.lat, m.lon]);
+            });
+            if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
+        }).catch(function(e) {
+            logEvent('ОШИБКА', 'Микрофоны: ' + e.message, 'high');
+        });
 
-        function addEvent(labelText, detail, cls) {
-            const el = document.createElement('div');
-            el.className = 'event ' + (cls || '');
-            const span = document.createElement('span');
-            span.className = 'label';
-            span.textContent = labelText;
-            el.appendChild(span);
-            if (detail) {
-                el.appendChild(document.createTextNode(' ' + detail));
+        /* ---- Events log ---- */
+        var evLogEl = document.getElementById('events-log');
+
+        function logEvent(tag, text, cls) {
+            var el = document.createElement('div');
+            el.className = 'ev-line ' + (cls || '');
+            var timeSpan = document.createElement('span');
+            timeSpan.className = 'ev-time';
+            timeSpan.textContent = ts();
+            var tagSpan = document.createElement('span');
+            tagSpan.className = 'ev-tag';
+            tagSpan.textContent = ' ' + tag;
+            el.appendChild(timeSpan);
+            el.appendChild(tagSpan);
+            el.appendChild(document.createTextNode(' ' + text));
+            evLogEl.prepend(el);
+            while (evLogEl.children.length > 8) evLogEl.removeChild(evLogEl.lastChild);
+        }
+
+        /* ---- Sidebar ---- */
+        var sidebar = document.getElementById('sidebar');
+        var SECTION_ORDER = ['detection', 'location', 'decision', 'drone', 'vision', 'alert', 'rag', 'protocol'];
+
+        function addSection(id, label, contentEl) {
+            var empty = document.getElementById('sb-empty');
+            if (empty) empty.remove();
+            var sec = document.getElementById('sb-' + id);
+            if (!sec) {
+                sec = document.createElement('div');
+                sec.className = 'sb-section';
+                sec.id = 'sb-' + id;
+                var idx = SECTION_ORDER.indexOf(id);
+                var inserted = false;
+                for (var i = idx + 1; i < SECTION_ORDER.length; i++) {
+                    var next = document.getElementById('sb-' + SECTION_ORDER[i]);
+                    if (next) { sidebar.insertBefore(sec, next); inserted = true; break; }
+                }
+                if (!inserted) sidebar.appendChild(sec);
             }
-            eventsDiv.prepend(el);
+            sec.textContent = '';
+            var lbl = document.createElement('div');
+            lbl.className = 'sb-label';
+            lbl.textContent = label;
+            sec.appendChild(lbl);
+            sec.appendChild(contentEl);
+            return sec;
+        }
+
+        /* ---- Build section content using safe DOM methods ---- */
+
+        function buildDetection(d) {
+            var frag = document.createDocumentFragment();
+
+            var cls = document.createElement('div');
+            cls.className = 'detect-class';
+            cls.textContent = classRu(d['class']);
+            frag.appendChild(cls);
+
+            var conf = document.createElement('div');
+            conf.className = 'detect-conf';
+            // confBar produces trusted static HTML with no user data embedded unsafely
+            conf.innerHTML = confBar(d.confidence);
+            frag.appendChild(conf);
+
+            var lvl = document.createElement('div');
+            lvl.innerHTML = confLevel(d.confidence);
+            frag.appendChild(lvl);
+
+            return frag;
+        }
+
+        function buildLocation(d) {
+            var frag = document.createDocumentFragment();
+            var coords = document.createElement('div');
+            coords.className = 'tri-coords';
+            coords.textContent = d.lat.toFixed(4) + '\u00b0N  ' + d.lon.toFixed(4) + '\u00b0E';
+            frag.appendChild(coords);
+
+            var err = document.createElement('div');
+            err.className = 'tri-error';
+            err.textContent = 'Погрешность: \u00b1' + (d.error_m ? d.error_m.toFixed(1) : '?') + ' м';
+            frag.appendChild(err);
+
+            return frag;
+        }
+
+        function buildDecision(d) {
+            var frag = document.createDocumentFragment();
+            var reason = document.createElement('div');
+            reason.style.fontSize = '12px';
+            reason.textContent = d.reason;
+            frag.appendChild(reason);
+
+            var drone = document.createElement('div');
+            drone.style.cssText = 'font-size:11px;color:#555;margin-top:4px;';
+            var droneLabel = document.createTextNode('Дрон: ');
+            var droneVal = document.createElement('span');
+            droneVal.style.color = d.send_drone ? '#00ff41' : '#444';
+            droneVal.textContent = d.send_drone ? 'ВЫЛЕТ' : 'нет';
+            drone.appendChild(droneLabel);
+            drone.appendChild(droneVal);
+            frag.appendChild(drone);
+
+            return frag;
+        }
+
+        function buildDronePhoto(b64) {
+            var img = document.createElement('img');
+            img.className = 'drone-photo';
+            img.src = 'data:image/jpeg;base64,' + b64;
+            img.alt = 'Фото с дрона';
+            return img;
+        }
+
+        function buildVision(d) {
+            var frag = document.createDocumentFragment();
+
+            var desc = document.createElement('div');
+            desc.className = 'vision-desc';
+            desc.textContent = d.description;
+            frag.appendChild(desc);
+
+            var flags = document.createElement('div');
+            flags.className = 'vision-flags';
+
+            [['Рубка', d.has_felling], ['Люди', d.has_human], ['Огонь', d.has_fire]].forEach(function(pair) {
+                var span = document.createElement('span');
+                span.className = 'vision-flag ' + (pair[1] ? 'yes' : 'no');
+                span.textContent = pair[0] + ': ' + (pair[1] ? 'ДА' : 'НЕТ');
+                flags.appendChild(span);
+            });
+            frag.appendChild(flags);
+
+            return frag;
+        }
+
+        function buildAlert(d) {
+            var frag = document.createDocumentFragment();
+
+            var gpt = document.createElement('div');
+            gpt.className = 'gpt-text';
+            gpt.textContent = d.text;
+            frag.appendChild(gpt);
+
+            var btn = document.createElement('button');
+            btn.className = 'rag-btn';
+            btn.textContent = 'Запросить рекомендации (RAG)';
+            btn.addEventListener('click', queryRAG);
+            frag.appendChild(btn);
+
+            var result = document.createElement('div');
+            result.id = 'rag-result';
+            frag.appendChild(result);
+
+            return frag;
+        }
+
+        function buildProtocol() {
+            var a = document.createElement('a');
+            a.className = 'proto-link';
+            a.href = '#';
+            a.textContent = 'Проект протокола PDF (через Telegram-бот @ya_faun_bot)';
+            a.addEventListener('click', function(e) { e.preventDefault(); });
+            return a;
+        }
+
+        /* ---- Clear incident layers ---- */
+        function clearIncidentLayers() {
+            mapLayers.forEach(function(l) { map.removeLayer(l); });
+            mapLayers = [];
+            if (droneMarker) { map.removeLayer(droneMarker); droneMarker = null; }
         }
 
         /* ---- WebSocket ---- */
-        let ws;
+        var wsStatus = document.getElementById('ws-status');
+
         function connect() {
-            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-            ws = new WebSocket(proto + '://' + location.host + '/ws');
+            var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            var ws = new WebSocket(proto + '://' + location.host + '/ws');
             ws.onopen = function() {
-                statusDiv.className = 'connected';
-                statusText.textContent = 'Подключено';
+                wsStatus.textContent = '\u25cf ОК';
+                wsStatus.className = 'ws-status ok';
             };
             ws.onclose = function() {
-                statusDiv.className = '';
-                statusText.textContent = 'Переподключение...';
+                wsStatus.textContent = '\u25cf ОТКЛ';
+                wsStatus.className = 'ws-status';
                 setTimeout(connect, 2000);
             };
-            ws.onmessage = function(e) {
-                const d = JSON.parse(e.data);
-                handleEvent(d);
-            };
+            ws.onmessage = function(e) { handleEvent(JSON.parse(e.data)); };
         }
         connect();
 
+        /* ---- Handle WS events ---- */
         function handleEvent(d) {
             switch (d.event) {
-                case 'mic_active':
-                    d.mics.forEach(function(m, i) {
-                        const name = 'Mic ' + 'ABC'[i];
-                        L.circleMarker([m.lat, m.lon], {radius: 6, color: '#22d3ee', fillOpacity: 0.8})
-                         .addTo(map).bindPopup(name);
-                    });
-                    map.setView([d.mics[0].lat, d.mics[0].lon], 15);
-                    addEvent('Микрофоны активны', '', 'low');
-                    break;
-
-                case 'audio_classified':
-                    var isThreat = d['class'] !== 'birds' && d['class'] !== 'silence';
-                    addEvent(
-                        'Звук:',
-                        d['class'] + ' (' + (d.confidence*100).toFixed(0) + '%)',
-                        isThreat ? 'high' : 'low'
-                    );
-                    break;
-
-                case 'location_found':
-                    var errStr = d.error_m ? d.error_m.toFixed(0) : '?';
-                    L.circleMarker([d.lat, d.lon], {radius: 10, color: '#f59e0b', fillOpacity: 0.5})
-                     .addTo(map).bindPopup('Источник (' + errStr + 'м)');
-                    addEvent('Источник:', d.lat.toFixed(4) + 'N ' + d.lon.toFixed(4) + 'E', 'medium');
-                    break;
-
-                case 'agent_decision':
-                    addEvent('Решение:', d.reason, d.send_drone ? 'high' : 'low');
-                    break;
-
-                case 'drone_moving':
-                    if (markers.drone) map.removeLayer(markers.drone);
-                    markers.drone = L.marker([d.lat, d.lon]).addTo(map).bindPopup('Дрон');
-                    break;
-
-                case 'drone_photo':
-                    addEvent('Фото получено', '', 'medium');
-                    break;
-
-                case 'vision_classified':
-                    addEvent('Визуально:', d.description, 'medium');
-                    break;
-
-                case 'alert_sent':
-                    addEvent('Алерт:', d.text, 'high');
-                    break;
-
-                case 'onset_check':
-                    if (d.triggered) {
-                        addEvent('Детекция:', 'Резкий звук обнаружен (x' + d.energy_ratio + ')', 'high');
-                    } else {
-                        addEvent('Детекция:', 'Тишина (x' + d.energy_ratio + ')', 'low');
+                case 'mic_active': {
+                    activeMics = d.mics || [];
+                    if (d.mics) {
+                        d.mics.forEach(function(m, i) {
+                            var icon = L.divIcon({
+                                html: '<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:2px solid #60a5fa;opacity:0.9;"></div>',
+                                iconSize: [14, 14], className: ''
+                            });
+                            var mk = L.marker([m.lat, m.lon], { icon: icon }).addTo(map);
+                            mk.bindPopup('Активный MIC-' + String.fromCharCode(65 + i));
+                            mapLayers.push(mk);
+                        });
                     }
+                    logEvent('МИКРОФОНЫ', 'активны (' + (d.mics ? d.mics.length : '?') + ')', 'low');
                     break;
+                }
 
-                case 'pipeline_end':
-                    addEvent('Готово:', d.reason, 'low');
+                case 'source_point': {
+                    var srcIcon = L.divIcon({
+                        html: '<div style="width:16px;height:16px;border-radius:50%;background:#ff2020;border:2px solid #ff6060;animation:pulse 1s infinite;"></div>',
+                        iconSize: [16, 16], className: ''
+                    });
+                    var srcMk = L.marker([d.lat, d.lon], { icon: srcIcon }).addTo(map);
+                    srcMk.bindPopup('Источник: ' + classRu(d.scenario));
+                    mapLayers.push(srcMk);
+                    logEvent('ИСТОЧНИК', classRu(d.scenario) + ' ' + d.lat.toFixed(4) + ' ' + d.lon.toFixed(4), 'high');
                     break;
+                }
+
+                case 'onset_check': {
+                    logEvent('ДЕТЕКЦИЯ', d.triggered ? 'резкий звук x' + d.energy_ratio : 'тишина x' + d.energy_ratio, d.triggered ? 'high' : 'low');
+                    break;
+                }
+
+                case 'audio_classified': {
+                    incident.audioClass = d['class'];
+                    incident.confidence = d.confidence;
+                    var isThreat = d['class'] !== 'birds' && d['class'] !== 'silence';
+                    addSection('detection', 'ДЕТЕКЦИЯ', buildDetection(d));
+                    logEvent('ЗВУК', classRu(d['class']) + ' ' + (d.confidence * 100).toFixed(0) + '%', isThreat ? 'high' : 'low');
+                    break;
+                }
+
+                case 'location_found': {
+                    incident.lat = d.lat;
+                    incident.lon = d.lon;
+                    incident.error_m = d.error_m;
+
+                    var circle = L.circle([d.lat, d.lon], {
+                        radius: d.error_m || 50, color: '#ff2020', fillColor: '#ff2020',
+                        fillOpacity: 0.12, weight: 1, dashArray: '4 4'
+                    }).addTo(map);
+                    mapLayers.push(circle);
+
+                    // TDOA visualization: radius circles + lines from each active mic
+                    activeMics.forEach(function(m) {
+                        var dist = haversine(m.lat, m.lon, d.lat, d.lon);
+                        var rc = L.circle([m.lat, m.lon], {
+                            radius: dist, color: '#3b82f6', fillColor: 'transparent',
+                            weight: 1, dashArray: '6 4', opacity: 0.5
+                        }).addTo(map);
+                        mapLayers.push(rc);
+                        var ln = L.polyline([[m.lat, m.lon], [d.lat, d.lon]], {
+                            color: '#3b82f6', weight: 1, dashArray: '4 4', opacity: 0.4
+                        }).addTo(map);
+                        mapLayers.push(ln);
+                    });
+
+                    var locIcon = L.divIcon({
+                        html: '<div style="width:12px;height:12px;border-radius:50%;border:2px solid #ff2020;background:transparent;"></div>',
+                        iconSize: [12, 12], className: ''
+                    });
+                    var locMk = L.marker([d.lat, d.lon], { icon: locIcon }).addTo(map);
+                    mapLayers.push(locMk);
+                    map.setView([d.lat, d.lon], 14);
+
+                    addSection('location', 'ТРИАНГУЛЯЦИЯ', buildLocation(d));
+                    var errStr = d.error_m ? '\u00b1' + d.error_m.toFixed(1) + 'м' : '?';
+                    logEvent('ТРИАНГУЛЯЦИЯ', d.lat.toFixed(4) + ' ' + d.lon.toFixed(4) + ' ' + errStr, 'medium');
+                    break;
+                }
+
+                case 'agent_decision': {
+                    addSection('decision', 'РЕШЕНИЕ', buildDecision(d));
+                    logEvent('РЕШЕНИЕ', d.reason, d.send_drone ? 'high' : 'low');
+                    break;
+                }
+
+                case 'drone_moving': {
+                    if (droneMarker) map.removeLayer(droneMarker);
+                    var dIcon = L.divIcon({
+                        html: '<div style="font-size:16px;text-align:center;filter:drop-shadow(0 0 4px #3b82f6);">&#9992;</div>',
+                        iconSize: [20, 20], className: ''
+                    });
+                    droneMarker = L.marker([d.lat, d.lon], { icon: dIcon }).addTo(map);
+                    break;
+                }
+
+                case 'drone_photo': {
+                    if (d.drone_b64) {
+                        addSection('drone', 'ДРОН', buildDronePhoto(d.drone_b64));
+                    }
+                    logEvent('ФОТО', 'получено', 'medium');
+                    break;
+                }
+
+                case 'vision_classified': {
+                    incident.vision = d;
+                    addSection('vision', 'VISION', buildVision(d));
+                    logEvent('VISION', d.has_felling ? 'рубка обнаружена' : 'норма', 'medium');
+                    break;
+                }
+
+                case 'alert_sent': {
+                    incident.alertText = d.text;
+                    addSection('alert', 'YANDEXGPT', buildAlert(d));
+                    addSection('protocol', '', buildProtocol());
+                    logEvent('АЛЕРТ', 'отправлен', 'high');
+                    break;
+                }
+
+                case 'pipeline_end': {
+                    logEvent('ГОТОВО', d.reason, 'low');
+                    break;
+                }
             }
         }
 
-        /* ---- REST API call ---- */
-        async function startDemo(scenario) {
-            eventsDiv.textContent = '';
-            Object.values(markers).forEach(function(m) { map.removeLayer(m); });
-            try {
-                const r = await fetch('/api/v1/demo', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({scenario: scenario})
-                });
-                const data = await r.json();
-                addEvent('Запуск:', scenario, 'low');
-            } catch (e) {
-                addEvent('Ошибка:', e.message, 'high');
+        /* ---- RAG query ---- */
+        function queryRAG() {
+            var btn = sidebar.querySelector('.rag-btn');
+            var result = document.getElementById('rag-result');
+            if (!btn || !result) return;
+
+            btn.disabled = true;
+            btn.textContent = 'ЗАПРОС...';
+            result.textContent = '';
+
+            var ctx = [];
+            if (incident.audioClass) ctx.push('Звук: ' + incident.audioClass);
+            if (incident.confidence) ctx.push('Уверенность: ' + (incident.confidence * 100).toFixed(0) + '%');
+            if (incident.lat) ctx.push('Координаты: ' + incident.lat.toFixed(4) + ', ' + incident.lon.toFixed(4));
+            if (incident.vision) {
+                ctx.push('Визуально: ' + incident.vision.description);
+                if (incident.vision.has_felling) ctx.push('Обнаружена рубка');
             }
+
+            fetch('/api/v1/rag-query', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    question: 'Какие действия должен предпринять инспектор при обнаружении незаконной рубки? Какие статьи ЛК РФ, УК РФ, КоАП применимы?',
+                    context: ctx.join('. ')
+                })
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                var resp = document.createElement('div');
+                resp.className = 'rag-response';
+                resp.textContent = data.answer;
+                result.appendChild(resp);
+            }).catch(function(e) {
+                var resp = document.createElement('div');
+                resp.className = 'rag-response';
+                resp.style.color = '#ff2020';
+                resp.textContent = 'Ошибка: ' + e.message;
+                result.appendChild(resp);
+            }).finally(function() {
+                btn.disabled = false;
+                btn.textContent = 'Запросить рекомендации (RAG)';
+            });
         }
+
+        /* ---- Start demo ---- */
+        window.startDemo = function(scenario) {
+            clearIncidentLayers();
+            incident = {};
+            activeMics = [];
+
+            sidebar.textContent = '';
+            var empty = document.createElement('div');
+            empty.className = 'sb-empty';
+            empty.id = 'sb-empty';
+            empty.textContent = 'Запуск: ' + classRu(scenario) + '...';
+            sidebar.appendChild(empty);
+
+            evLogEl.textContent = '';
+
+            fetch('/api/v1/demo', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ scenario: scenario })
+            }).then(function() {
+                logEvent('ЗАПУСК', classRu(scenario), 'low');
+            }).catch(function(e) {
+                logEvent('ОШИБКА', e.message, 'high');
+            });
+        };
+
+    })();
     </script>
 </body>
 </html>

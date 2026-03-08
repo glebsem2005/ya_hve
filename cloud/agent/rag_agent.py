@@ -50,17 +50,29 @@ CLASS_CONTEXT = {
 
 
 async def _call_yandex_with_sdk(prompt: str) -> str:
-    """Call YandexGPT via SDK with File Search (Assistants API)."""
+    """Call YandexGPT via SDK with File Search + Web Search (Assistants API)."""
     try:
         from yandex_ai_studio_sdk import AIStudio
 
         sdk = AIStudio(folder_id=YANDEX_FOLDER_ID, auth=YANDEX_API_KEY)
         search_index = sdk.search_indexes.get(SEARCH_INDEX_ID)
-        tool = sdk.tools.search_index(search_index)
+        file_search_tool = sdk.tools.search_index(search_index)
+
+        tools = [file_search_tool]
+        try:
+            web_search_tool = sdk.tools.web_search(
+                allowed_domains=["consultant.ru", "garant.ru", "rg.ru"],
+                search_context_size="medium",
+            )
+            tools.append(web_search_tool)
+        except Exception as e:
+            logger.warning(
+                "Web Search tool init failed (SDK may not support it): %s", e
+            )
 
         assistant = sdk.assistants.create(
             "yandexgpt",
-            tools=[tool],
+            tools=tools,
             instruction=SYSTEM_PROMPT,
         )
         thread = sdk.threads.create()

@@ -98,10 +98,12 @@ def _signal_snr(signal: np.ndarray) -> float:
     n_frames = len(signal) // frame_size
     if n_frames < 2:
         return 0.0
-    energies = np.array([
-        np.mean(signal[i * frame_size : (i + 1) * frame_size] ** 2)
-        for i in range(n_frames)
-    ])
+    energies = np.array(
+        [
+            np.mean(signal[i * frame_size : (i + 1) * frame_size] ** 2)
+            for i in range(n_frames)
+        ]
+    )
     noise_floor = np.percentile(energies, 10) + 1e-15
     signal_peak = np.percentile(energies, 90) + 1e-15
     return float(10 * np.log10(signal_peak / noise_floor))
@@ -114,6 +116,7 @@ def triangulate(
     use_bandpass: bool = True,
     temperature_c: float | None = None,
     distance_weight: float = 0.3,
+    zone_type: str = "default",
 ) -> TriangulationResult:
     """Triangulate sound source using TDOA + energy-based distance fusion.
 
@@ -176,6 +179,7 @@ def triangulate(
     dist_estimates = estimate_distances(
         [sig_a, sig_b, sig_c],
         [snr_a, snr_b, snr_c],
+        zone_type=zone_type,
     )
     est_da = dist_estimates[0].distance_m
     est_db = dist_estimates[1].distance_m
@@ -202,7 +206,9 @@ def triangulate(
         err_ab = (db - da) - d_ab
         err_ac = (dc - da) - d_ac
         err_bc = (dc - db) - d_bc
-        tdoa_cost = (w_ab * err_ab**2 + w_ac * err_ac**2 + w_bc * err_bc**2) / w_tdoa_sum
+        tdoa_cost = (
+            w_ab * err_ab**2 + w_ac * err_ac**2 + w_bc * err_bc**2
+        ) / w_tdoa_sum
 
         # Distance constraints (absolute distance to each mic)
         derr_a = (da - est_da) ** 2
@@ -218,9 +224,9 @@ def triangulate(
 
     initial_guesses = [
         [centroid_x, centroid_y],
-        [0.0, 0.0],          # near mic A
-        [bx, by],             # near mic B
-        [cx, cy],             # near mic C
+        [0.0, 0.0],  # near mic A
+        [bx, by],  # near mic B
+        [cx, cy],  # near mic C
         [centroid_x * 2, centroid_y * 2],  # outside triangle
     ]
 
@@ -229,7 +235,9 @@ def triangulate(
 
     for x0 in initial_guesses:
         result = minimize(
-            cost, x0, method="Nelder-Mead",
+            cost,
+            x0,
+            method="Nelder-Mead",
             options={"xatol": 0.1, "fatol": 0.01, "maxiter": 500},
         )
         if result.fun < best_cost:

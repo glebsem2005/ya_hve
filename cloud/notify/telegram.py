@@ -15,7 +15,13 @@ import logging
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from cloud.agent.decision import Alert
-from cloud.db.rangers import get_rangers_for_location, Ranger
+from cloud.db.rangers import (
+    get_rangers_for_location,
+    get_all_rangers,
+    get_nearest_rangers,
+    Ranger,
+)
+from cloud.db.rangers import _haversine as haversine_m
 from cloud.db.incidents import Incident, create_incident
 
 logger = logging.getLogger(__name__)
@@ -62,9 +68,9 @@ def _mark_sent(chat_id: int) -> None:
 
 
 def _get_target_chat_ids(lat: float, lon: float) -> list[int]:
-    """Get chat IDs of rangers responsible for this location."""
-    rangers = get_rangers_for_location(lat, lon)
-    return [r.chat_id for r in rangers]
+    """Get chat IDs of all active rangers (demo: notify everyone)."""
+    rangers = get_all_rangers()
+    return [r.chat_id for r in rangers if r.active]
 
 
 def _gating_level(confidence: float) -> str:
@@ -110,8 +116,17 @@ async def send_pending(
         f"Координаты: {lat:.4f} N, {lon:.4f} E\n"
         f"Уверенность: {conf_pct}\n"
         f"Уровень: {level_label}\n\n"
-        f"Дрон вылетел для подтверждения"
     )
+
+    # Add nearest ranger info
+    nearest = get_nearest_rangers(lat, lon, limit=1)
+    if nearest:
+        dist_km = (
+            haversine_m(lat, lon, nearest[0].current_lat, nearest[0].current_lon) / 1000
+        )
+        text += f"Ближайший инспектор: {nearest[0].name} ({dist_km:.1f} км)\n\n"
+
+    text += "Дрон вылетел для подтверждения"
 
     keyboard = InlineKeyboardMarkup(
         [

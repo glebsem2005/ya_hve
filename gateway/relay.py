@@ -9,15 +9,23 @@ Flow:
 
 import asyncio
 import json
+import logging
 import os
 
 from cloud.vision.classifier import classify_photo
 from cloud.agent.decision import compose_alert
 from cloud.notify.telegram import send_pending, send_confirmed
+from gateway.mesh import MeshRouter, MeshPacket
+
+logger = logging.getLogger(__name__)
 
 HOST = os.getenv("LORA_GATEWAY_HOST", "0.0.0.0")
 PORT = int(os.getenv("LORA_GATEWAY_PORT", 9000))
+LORA_FREQ_MHZ = int(os.getenv("LORA_FREQ_MHZ", 868))
 CLOUD_API_URL = os.getenv("CLOUD_API_URL", "http://cloud:8000")
+
+# Mesh router for deduplication of multi-hop packets
+_mesh_router = MeshRouter()
 
 
 async def _forward_to_dashboard(event: dict) -> None:
@@ -37,9 +45,24 @@ async def _forward_to_dashboard(event: dict) -> None:
 
 async def handle_packet(packet: dict) -> None:
 
-    print(f"\nPacket received from edge:")
-    print(f"class={packet['class']}  conf={packet['confidence']:.0%}")
-    print(f"lat={packet['lat']:.4f}  lon={packet['lon']:.4f}")
+    # Mesh deduplication: if packet has mesh headers, check for duplicates
+    if "packet_id" in packet:
+        mesh_pkt = MeshPacket(
+            packet_id=packet["packet_id"],
+            source_node=packet.get("source_node", "unknown"),
+            hop_count=packet.get("hop_count", 0),
+            max_hops=packet.get("max_hops", 3),
+            route=packet.get("route", []),
+            payload=packet,
+        )
+        payload = _mesh_router.process_packet(mesh_pkt)
+        if payload is None:
+            logger.info("Mesh: duplicate packet dropped")
+            return
+
+    logger.info("Packet received from edge:")
+    logger.info("class=%s  conf=%.0f%%", packet["class"], packet["confidence"] * 100)
+    logger.info("lat=%.4f  lon=%.4f", packet["lat"], packet["lon"])
 
     # Notify dashboard: sound detected and localized
     await _forward_to_dashboard(
@@ -94,6 +117,29 @@ async def handle_packet(packet: dict) -> None:
     )
     print(f"   Alert: {alert.text[:80]}...")
 
+    # Classification agent verification (non-blocking, enriches context)
+    try:
+        from cloud.agent.classification_agent import verify_classification
+
+        verification = await verify_classification(
+            audio_class=packet["class"],
+            confidence=packet["confidence"],
+            lat=packet["lat"],
+            lon=packet["lon"],
+            ndsi=packet.get("ndsi"),
+        )
+        logger.info("Agent verification: priority=%s", verification.priority)
+        await _forward_to_dashboard(
+            {
+                "event": "agent_verified",
+                "priority": verification.priority,
+                "context_analysis": verification.context_analysis,
+                "recommended_action": verification.recommended_action,
+            }
+        )
+    except Exception as e:
+        logger.warning("Classification agent failed: %s", e)
+
     # Send pending alert first (creates Incident with accept button)
     incident = await send_pending(
         lat=packet["lat"],
@@ -146,8 +192,10 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
 
 async def main():
     server = await asyncio.start_server(handle_connection, HOST, PORT)
-    print(f"LoRa Gateway listening on {HOST}:{PORT}")
-    print("Waiting for packets from edge server...\n")
+    logger.info(
+        "LoRa Gateway listening on %s:%d (radio: %d MHz)", HOST, PORT, LORA_FREQ_MHZ
+    )
+    logger.info("Waiting for packets from edge server...")
     async with server:
         await server.serve_forever()
 

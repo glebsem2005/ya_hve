@@ -16,6 +16,31 @@ from dataclasses import dataclass
 
 
 @dataclass
+class CalibrationProfile:
+    """Zone-specific calibration for energy-based distance estimation.
+
+    Different forest zone types have different acoustic propagation
+    characteristics (canopy density, ground absorption, humidity).
+    """
+
+    zone_type: str  # "dense_forest", "clearing", "wetland", ...
+    ref_rms: float
+    ref_distance: float
+    attenuation_factor: float
+
+
+CALIBRATION_PROFILES: dict[str, CalibrationProfile] = {
+    "default": CalibrationProfile("default", 0.25, 1.0, 1.0),
+    "exploitation": CalibrationProfile("exploitation", 0.25, 1.0, 1.0),
+    "oopt": CalibrationProfile("oopt", 0.22, 1.0, 1.3),
+    "water_protection": CalibrationProfile("water_protection", 0.23, 1.0, 1.2),
+    "protective_strip": CalibrationProfile("protective_strip", 0.24, 1.0, 1.1),
+    "anti_erosion": CalibrationProfile("anti_erosion", 0.22, 1.0, 1.3),
+    "spawning_protection": CalibrationProfile("spawning_protection", 0.20, 1.0, 1.4),
+}
+
+
+@dataclass
 class DistanceEstimate:
     """Per-microphone distance estimate with uncertainty."""
 
@@ -55,6 +80,7 @@ def estimate_distances(
     ref_rms: float = _DEFAULT_REF_RMS,
     ref_distance: float = _DEFAULT_REF_DISTANCE,
     max_distance: float = 2000.0,
+    zone_type: str = "default",
 ) -> list[DistanceEstimate]:
     """Estimate distance from sound source to each microphone.
 
@@ -68,11 +94,22 @@ def estimate_distances(
     ref_rms : RMS amplitude of the reference source at ref_distance
     ref_distance : reference distance in metres
     max_distance : clamp estimates to this value (prevents ∞ for silence)
+    zone_type : calibration profile name (see CALIBRATION_PROFILES)
 
     Returns
     -------
     list of DistanceEstimate, one per microphone
     """
+    # Apply calibration profile if zone_type is recognized.
+    # Explicit ref_rms / ref_distance kwargs still take priority when
+    # they differ from the module-level defaults (backward compat).
+    profile = CALIBRATION_PROFILES.get(zone_type)
+    if profile is not None:
+        if ref_rms == _DEFAULT_REF_RMS:
+            ref_rms = profile.ref_rms
+        if ref_distance == _DEFAULT_REF_DISTANCE:
+            ref_distance = profile.ref_distance
+
     estimates = []
     for sig, snr in zip(signals, snrs):
         rms = _rms_energy(sig)

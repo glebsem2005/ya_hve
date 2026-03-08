@@ -17,6 +17,7 @@ import soundfile as sf
 import tempfile
 
 from edge.audio.classifier import classify
+from edge.audio.ndsi import compute_ndsi
 from edge.audio.onset import OnsetDetector, FRAME_SIZE, LONG_TERM_FRAMES
 from edge.tdoa.triangulate import triangulate, MicPosition, TriangulationResult
 from edge.decision.decider import decide
@@ -29,24 +30,43 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MIC_POSITIONS = [
-    MicPosition(
-        lat=float(os.getenv("MIC_A_LAT", 55.7510)),
-        lon=float(os.getenv("MIC_A_LON", 37.6130)),
-    ),
-    MicPosition(
-        lat=float(os.getenv("MIC_B_LAT", 55.7515)),
-        lon=float(os.getenv("MIC_B_LON", 37.6138)),
-    ),
-    MicPosition(
-        lat=float(os.getenv("MIC_C_LAT", 55.7508)),
-        lon=float(os.getenv("MIC_C_LON", 37.6142)),
-    ),
-]
+
+def _load_mic_positions() -> list[MicPosition]:
+    """Load microphone positions from database, fallback to env vars."""
+    try:
+        from cloud.db.microphones import get_online
+
+        online_mics = get_online()
+        if len(online_mics) >= 3:
+            # Use first 3 online mics for TDOA triangulation
+            return [MicPosition(lat=m.lat, lon=m.lon) for m in online_mics[:3]]
+        logger.warning(
+            "Only %d online mics in DB, falling back to env vars", len(online_mics)
+        )
+    except Exception as e:
+        logger.warning("Failed to load mics from DB: %s, using env vars", e)
+
+    return [
+        MicPosition(
+            lat=float(os.getenv("MIC_A_LAT", 55.7510)),
+            lon=float(os.getenv("MIC_A_LON", 37.6130)),
+        ),
+        MicPosition(
+            lat=float(os.getenv("MIC_B_LAT", 55.7515)),
+            lon=float(os.getenv("MIC_B_LON", 37.6138)),
+        ),
+        MicPosition(
+            lat=float(os.getenv("MIC_C_LAT", 55.7508)),
+            lon=float(os.getenv("MIC_C_LON", 37.6142)),
+        ),
+    ]
+
+
+MIC_POSITIONS = _load_mic_positions()
 
 SAMPLE_RATE = 16000
-LISTEN_CHUNK_SECONDS = 2   # continuous listening window
-RECORD_SECONDS = 3         # full recording after onset trigger
+LISTEN_CHUNK_SECONDS = 2  # continuous listening window
+RECORD_SECONDS = 3  # full recording after onset trigger
 
 
 async def _acquire_signals_sim(scenario: str):
@@ -135,9 +155,7 @@ async def _continuous_listen_real(device_id: int, detector: OnsetDetector):
         await asyncio.sleep(0.05)
 
 
-async def _continuous_listen_real3(
-    device_ids: list[int], detector: OnsetDetector
-):
+async def _continuous_listen_real3(device_ids: list[int], detector: OnsetDetector):
     """Continuously listen on 3-mic array, trigger on onset."""
     import sounddevice as sd
 
@@ -289,6 +307,12 @@ async def run():
                     "Classification: %s (%.0f%%)", audio.label, audio.confidence * 100
                 )
 
+                # --- NDSI analysis ---
+                ndsi_result = compute_ndsi(signals[0], SAMPLE_RATE)
+                logger.info(
+                    "NDSI: %.3f (%s)", ndsi_result.ndsi, ndsi_result.interpretation
+                )
+
                 # --- Triangulate ---
                 try:
                     location = triangulate(signals, MIC_POSITIONS)
@@ -313,7 +337,7 @@ async def run():
                     location.error_m,
                 )
 
-                decision = decide(audio, location)
+                decision = decide(audio, location, ndsi=ndsi_result)
                 logger.info("Decision: %s", decision.reason)
 
                 if not decision.send_drone and not decision.send_lora:
@@ -328,9 +352,7 @@ async def run():
                     try:
                         await asyncio.wait_for(drone.takeoff(), timeout=10)
                         async for pos in drone.fly_to(location.lat, location.lon):
-                            logger.info(
-                                "   Drone at %.4f°N %.4f°E", pos.lat, pos.lon
-                            )
+                            logger.info("   Drone at %.4f°N %.4f°E", pos.lat, pos.lon)
                         photo = await asyncio.wait_for(
                             drone.capture_photo(), timeout=10
                         )
@@ -351,6 +373,8 @@ async def run():
                         "priority": decision.priority,
                         "error_m": location.error_m,
                         "photo_b64": photo.b64 if photo else None,
+                        "ndsi": ndsi_result.ndsi,
+                        "ndsi_interpretation": ndsi_result.interpretation,
                     }
                     try:
                         await asyncio.wait_for(lora.send(packet), timeout=10)
