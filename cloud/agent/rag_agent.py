@@ -55,14 +55,15 @@ async def _call_yandex_with_tools(prompt: str) -> str:
     if SEARCH_INDEX_ID:
         tools.append(
             {
+                "type": "file_search",
                 "file_search": {
                     "search_index_ids": [SEARCH_INDEX_ID],
                     "max_num_results": 5,
-                }
+                },
             }
         )
 
-    tools.append({"web_search": {}})
+    tools.append({"type": "web_search", "web_search": {}})
 
     body = {
         "modelUri": f"gpt://{YANDEX_FOLDER_ID}/yandexgpt",
