@@ -15,5 +15,6 @@ aiofiles>=23.2
 pymavlink>=2.4
 pydantic>=2.0
 yandex-ai-studio-sdk>=0.3
+fpdf2>=2.7
 
 pytest>=7.4

@@ -110,7 +110,7 @@ async def _call_yandex_plain(prompt: str) -> str:
 def _fallback_response(prompt: str) -> str:
     """Static fallback when API is unavailable."""
     return (
-        "⚠️ YandexGPT временно недоступен.\n\n"
+        "YandexGPT временно недоступен.\n\n"
         "Базовые рекомендации:\n"
         "1. Зафиксируйте GPS-координаты\n"
         "2. Сделайте фото/видео нарушения\n"

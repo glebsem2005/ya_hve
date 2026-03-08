@@ -421,7 +421,8 @@ async def _run_demo(scenario: str):
         await broadcast({"event": "drone_photo", "drone_b64": photo.b64})
         return photo
 
-    photo, _ = await asyncio.gather(
+    # send_pending creates an Incident and returns it
+    photo, incident = await asyncio.gather(
         drone_task(),
         send_pending(
             location.lat,
@@ -450,7 +451,8 @@ async def _run_demo(scenario: str):
         lon=location.lon,
         confidence=audio_result.confidence,
     )
-    await send_confirmed(alert, photo.data)
+    # Store drone photo in incident (sent to ranger after accept)
+    await send_confirmed(alert, photo.data, incident=incident)
     await broadcast(
         {"event": "alert_sent", "text": alert.text, "priority": alert.priority}
     )

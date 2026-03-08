@@ -13,7 +13,7 @@ import os
 
 from cloud.vision.classifier import classify_photo
 from cloud.agent.decision import compose_alert
-from cloud.notify.telegram import send_confirmed
+from cloud.notify.telegram import send_pending, send_confirmed
 
 HOST = os.getenv("LORA_GATEWAY_HOST", "0.0.0.0")
 PORT = int(os.getenv("LORA_GATEWAY_PORT", 9000))
@@ -42,17 +42,21 @@ async def handle_packet(packet: dict) -> None:
     print(f"lat={packet['lat']:.4f}  lon={packet['lon']:.4f}")
 
     # Notify dashboard: sound detected and localized
-    await _forward_to_dashboard({
-        "event": "audio_classified",
-        "class": packet["class"],
-        "confidence": packet["confidence"],
-    })
-    await _forward_to_dashboard({
-        "event": "location_found",
-        "lat": packet["lat"],
-        "lon": packet["lon"],
-        "error_m": packet.get("error_m", 0.0),
-    })
+    await _forward_to_dashboard(
+        {
+            "event": "audio_classified",
+            "class": packet["class"],
+            "confidence": packet["confidence"],
+        }
+    )
+    await _forward_to_dashboard(
+        {
+            "event": "location_found",
+            "lat": packet["lat"],
+            "lon": packet["lon"],
+            "error_m": packet.get("error_m", 0.0),
+        }
+    )
 
     photo_b64 = packet.get("photo_b64", "")
 
@@ -61,13 +65,15 @@ async def handle_packet(packet: dict) -> None:
         vision = await classify_photo(photo_b64)
         print(f"   Vision: {vision.description}")
 
-        await _forward_to_dashboard({
-            "event": "vision_classified",
-            "description": vision.description,
-            "has_human": vision.has_human,
-            "has_fire": vision.has_fire,
-            "has_felling": vision.has_felling,
-        })
+        await _forward_to_dashboard(
+            {
+                "event": "vision_classified",
+                "description": vision.description,
+                "has_human": vision.has_human,
+                "has_fire": vision.has_fire,
+                "has_felling": vision.has_felling,
+            }
+        )
     else:
         from cloud.vision.classifier import VisionResult
 
@@ -88,26 +94,39 @@ async def handle_packet(packet: dict) -> None:
     )
     print(f"   Alert: {alert.text[:80]}...")
 
-    print("Sending Telegram alert to ranger...")
+    # Send pending alert first (creates Incident with accept button)
+    incident = await send_pending(
+        lat=packet["lat"],
+        lon=packet["lon"],
+        audio_class=packet["class"],
+        reason="gateway detection",
+        confidence=packet["confidence"],
+    )
+
+    # Store drone photo in incident (will be sent after ranger accepts)
     photo_bytes = None
     if photo_b64:
         import base64
 
         photo_bytes = base64.b64decode(photo_b64)
 
-    await send_confirmed(alert, photo_bytes)
+    await send_confirmed(alert, photo_bytes, incident=incident)
     print("Alert sent to Telegram.")
 
     # Forward final alert to web dashboard
-    await _forward_to_dashboard({
-        "event": "alert_sent",
-        "text": alert.text,
-        "priority": alert.priority,
-    })
-    await _forward_to_dashboard({
-        "event": "pipeline_end",
-        "reason": "complete",
-    })
+    await _forward_to_dashboard(
+        {
+            "event": "alert_sent",
+            "text": alert.text,
+            "priority": alert.priority,
+        }
+    )
+    await _forward_to_dashboard(
+        {
+            "event": "pipeline_end",
+            "reason": "complete",
+        }
+    )
     print("Alert forwarded to web dashboard.\n")
 
 
