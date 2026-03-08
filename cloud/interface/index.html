@@ -3,100 +3,836 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ForestGuard</title>
+    <title>ФАВН — Мониторинг леса</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: system-ui, -apple-system, sans-serif; display: flex; height: 100vh; }
-        #map { flex: 1; }
-        #panel {
-            width: 360px; background: #1a1a2e; color: #eee;
-            overflow-y: auto; padding: 16px; display: flex; flex-direction: column;
+        :root {
+            --bg-primary: #0f1117;
+            --bg-card: #1a1d2e;
+            --bg-card-inner: #232738;
+            --border: #2a2e3f;
+            --text-primary: #e8e8ec;
+            --text-secondary: #9ca3af;
+            --accent-red: #ef4444;
+            --accent-green: #22c55e;
+            --accent-yellow: #f59e0b;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #22d3ee;
+            --accent-purple: #a855f7;
         }
-        #panel h2 { margin-bottom: 12px; color: #4ade80; font-size: 18px; }
-        .event {
-            background: #16213e; border-radius: 8px;
-            padding: 10px; margin-bottom: 8px; font-size: 13px;
-            border-left: 4px solid #334155;
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
-        .event .label { color: #22d3ee; font-weight: bold; }
-        .event.high { border-left-color: #ef4444; }
-        .event.medium { border-left-color: #f59e0b; }
-        .event.low { border-left-color: #4ade80; }
-        #controls { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
-        #controls button {
-            padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer;
-            background: #0f3460; color: #fff; font-size: 13px; transition: background 0.2s;
+
+        /* ---- Header ---- */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-primary);
+            flex-shrink: 0;
         }
-        #controls button:hover { background: #e94560; }
-        #status {
-            font-size: 12px; color: #888; margin-bottom: 12px;
-            display: flex; align-items: center; gap: 6px;
+        .header-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 2px;
         }
-        #status .dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            background: #ef4444; display: inline-block;
+        .header-logo svg { width: 32px; height: 32px; }
+        .btn-logout {
+            padding: 8px 20px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
         }
-        #status.connected .dot { background: #4ade80; }
-        #events { flex: 1; overflow-y: auto; }
+        .btn-logout:hover { background: var(--bg-card); }
+
+        /* ---- Main grid ---- */
+        .main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 280px 1fr 320px;
+            grid-template-rows: auto 1fr auto;
+            gap: 12px;
+            padding: 12px;
+            overflow: hidden;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        /* ---- Left column: Geoanalytics ---- */
+        .geo-panel {
+            grid-row: 1 / 4;
+            overflow-y: auto;
+        }
+        .geo-panel h3 {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            font-style: italic;
+        }
+        .forestry-item {
+            background: var(--bg-card-inner);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+        .forestry-item .name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+        .forestry-item .stats {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+        }
+        .forestry-item .stats .num {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .forestry-item .stats .label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            line-height: 1.2;
+        }
+        .severity-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: auto;
+        }
+        .severity-high { background: var(--accent-red); color: #fff; }
+        .severity-medium { background: var(--accent-yellow); color: #000; }
+        .severity-low { background: var(--accent-green); color: #fff; }
+
+        /* ---- Center top: Profile ---- */
+        .profile-bar {
+            grid-column: 2;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 20px;
+        }
+        .profile-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--accent-purple);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .profile-info { flex: 1; }
+        .profile-info .email { font-size: 16px; font-weight: 600; }
+        .profile-info .role { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+        .profile-info .online-badge {
+            display: inline-block;
+            background: var(--accent-green);
+            color: #fff;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-top: 4px;
+        }
+
+        /* ---- Right top: Quick stats ---- */
+        .stats-bar {
+            grid-column: 3;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px 16px;
+        }
+        .stats-bar .update-time {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-align: right;
+            margin-bottom: 4px;
+        }
+        .stats-row {
+            display: flex;
+            gap: 16px;
+        }
+        .stat-item {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+        .stat-item .big-num {
+            font-size: 32px;
+            font-weight: 700;
+        }
+        .stat-item .stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.3;
+            max-width: 100px;
+        }
+
+        /* ---- Center: Map ---- */
+        .map-container {
+            grid-column: 2;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            min-height: 0;
+        }
+        #map { width: 100%; height: 100%; }
+        .map-controls {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .map-btn {
+            width: 36px;
+            height: 36px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        .map-btn:hover { background: var(--bg-card-inner); }
+        .map-btn.mic-btn {
+            color: var(--accent-blue);
+            font-size: 14px;
+        }
+
+        /* ---- Right: Event detail ---- */
+        .event-detail {
+            grid-column: 3;
+            grid-row: 2 / 4;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .detail-row {
+            background: var(--bg-card-inner);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 13px;
+        }
+        .detail-row .detail-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
+        }
+        .detail-row .detail-value {
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .gps-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .gps-coords {
+            background: var(--bg-card-inner);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .threat-badge {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 13px;
+        }
+        .threat-high { background: var(--accent-red); color: #fff; }
+        .threat-medium { background: var(--accent-yellow); color: #000; }
+        .threat-low { background: var(--accent-green); color: #fff; }
+
+        .event-type-badge {
+            display: inline-block;
+            padding: 4px 14px;
+            border: 2px solid var(--accent-red);
+            border-radius: 8px;
+            color: var(--accent-red);
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .alert-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .alert-title .warn-icon {
+            color: var(--accent-red);
+            font-size: 20px;
+        }
+
+        .photo-placeholder {
+            width: 100%;
+            height: 140px;
+            border-radius: 8px;
+            background: var(--bg-card-inner);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 13px;
+            overflow: hidden;
+        }
+        .photo-placeholder img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .recommendations {
+            background: var(--bg-card-inner);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        .rec-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .rec-header .yandex-gpt {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .rec-header .contacts {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .rec-list {
+            list-style: none;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.8;
+        }
+        .rec-list li::before {
+            content: attr(data-num) ". ";
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .rec-expand {
+            text-align: right;
+            margin-top: 4px;
+        }
+        .rec-expand button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .forest-code-link {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card-inner);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .forest-code-link span:last-child { color: var(--text-secondary); }
+
+        /* ---- Bottom: Stats + Chart ---- */
+        .bottom-row {
+            grid-column: 1 / 3;
+            display: grid;
+            grid-template-columns: 1fr 1fr 2fr;
+            gap: 12px;
+        }
+        .stat-card {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 16px 20px;
+        }
+        .stat-card .stat-big {
+            font-size: 48px;
+            font-weight: 800;
+            line-height: 1;
+        }
+        .stat-card .stat-unit {
+            font-size: 20px;
+            font-weight: 400;
+            color: var(--text-secondary);
+        }
+        .stat-card .stat-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        .month-selector {
+            display: inline-block;
+            padding: 4px 12px;
+            border: 1px solid var(--accent-yellow);
+            border-radius: 6px;
+            color: var(--accent-yellow);
+            font-size: 12px;
+            background: transparent;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+
+        .chart-card {
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+        }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .chart-header h4 { font-size: 14px; font-weight: 600; }
+        .chart-wrap {
+            flex: 1;
+            position: relative;
+            min-height: 120px;
+        }
+        .chart-wrap canvas { width: 100% !important; height: 100% !important; }
+
+        /* ---- Demo controls ---- */
+        .demo-controls {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            z-index: 1000;
+            display: flex;
+            gap: 6px;
+        }
+        .demo-btn {
+            padding: 6px 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: rgba(15, 17, 23, 0.85);
+            color: var(--text-primary);
+            font-size: 12px;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+            transition: background 0.2s;
+        }
+        .demo-btn:hover { background: var(--accent-red); }
+
+        /* ---- Status indicator ---- */
+        .status-indicator {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: rgba(15, 17, 23, 0.85);
+            border-radius: 6px;
+            font-size: 11px;
+            backdrop-filter: blur(4px);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-red);
+        }
+        .status-indicator.connected .status-dot {
+            background: var(--accent-green);
+        }
+
+        /* ---- Events log overlay ---- */
+        .events-log {
+            position: absolute;
+            top: 12px;
+            right: 60px;
+            z-index: 1000;
+            max-height: 200px;
+            width: 260px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .event-item {
+            padding: 6px 10px;
+            background: rgba(15, 17, 23, 0.85);
+            border-radius: 6px;
+            font-size: 11px;
+            backdrop-filter: blur(4px);
+            border-left: 3px solid var(--border);
+        }
+        .event-item.high { border-left-color: var(--accent-red); }
+        .event-item.medium { border-left-color: var(--accent-yellow); }
+        .event-item.low { border-left-color: var(--accent-green); }
+        .event-item .ev-label { font-weight: 600; color: var(--accent-cyan); }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        /* Leaflet overrides */
+        .leaflet-control-zoom { display: none !important; }
+        .leaflet-control-attribution { display: none !important; }
     </style>
 </head>
 <body>
-    <div id="map"></div>
-    <div id="panel">
-        <h2>ForestGuard</h2>
-        <div id="controls">
-            <button onclick="startDemo('chainsaw')">Бензопила</button>
-            <button onclick="startDemo('gunshot')">Выстрел</button>
-            <button onclick="startDemo('normal')">Птицы</button>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-logo">
+            <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="20" cy="20" r="18" stroke="currentColor" stroke-width="2"/>
+                <path d="M20 8c0 0-6 8-6 14s2.5 10 6 10 6-4 6-10S20 8 20 8z" stroke="currentColor" stroke-width="2" fill="none"/>
+                <path d="M14 20c4-2 8-2 12 0" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            </svg>
+            ФАВН
         </div>
-        <div id="status"><span class="dot"></span> <span id="status-text">Отключено</span></div>
-        <div id="events"></div>
+        <button class="btn-logout">Выйти</button>
+    </div>
+
+    <!-- Main grid -->
+    <div class="main">
+        <!-- Left: Geoanalytics -->
+        <div class="card geo-panel">
+            <h3>Геоаналитика</h3>
+            <div class="forestry-item">
+                <div class="name">Семёновское лесничество</div>
+                <div class="stats">
+                    <div><span class="num">26</span> <span class="label">количество<br>тревог</span></div>
+                    <div><span class="num">21</span> <span class="label">количество<br>нарушений</span></div>
+                    <span class="severity-badge severity-high">Высокий</span>
+                </div>
+            </div>
+            <div class="forestry-item">
+                <div class="name">Ветлужское лесничество</div>
+                <div class="stats">
+                    <div><span class="num">32</span> <span class="label">количество<br>тревог</span></div>
+                    <div><span class="num">15</span> <span class="label">количество<br>нарушений</span></div>
+                    <span class="severity-badge severity-high">Высокий</span>
+                </div>
+            </div>
+            <div class="forestry-item">
+                <div class="name">Уренское лесничество</div>
+                <div class="stats">
+                    <div><span class="num">24</span> <span class="label">количество<br>тревог</span></div>
+                    <div><span class="num">11</span> <span class="label">количество<br>нарушений</span></div>
+                    <span class="severity-badge severity-medium">Средний</span>
+                </div>
+            </div>
+            <div class="forestry-item">
+                <div class="name">Краснобаковское лесничество</div>
+                <div class="stats">
+                    <div><span class="num">18</span> <span class="label">количество<br>тревог</span></div>
+                    <div><span class="num">9</span> <span class="label">количество<br>нарушений</span></div>
+                    <span class="severity-badge severity-medium">Средний</span>
+                </div>
+            </div>
+            <div class="forestry-item">
+                <div class="name">Варнавинское лесничество</div>
+                <div class="stats">
+                    <div><span class="num">7</span> <span class="label">количество<br>тревог</span></div>
+                    <div><span class="num">3</span> <span class="label">количество<br>нарушений</span></div>
+                    <span class="severity-badge severity-low">Низкий</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center top: Profile -->
+        <div class="card profile-bar">
+            <div class="profile-avatar">👤</div>
+            <div class="profile-info">
+                <div class="email" id="user-email">ivanivanov@yandex.ru</div>
+                <div class="role">Инспектор Иванов И.И. &bull; Нижегородская область</div>
+                <span class="online-badge" id="online-badge">Онлайн</span>
+                <div class="role" style="margin-top:2px;">Арзамасское межрайонное лесничество</div>
+            </div>
+        </div>
+
+        <!-- Right top: Stats -->
+        <div class="card stats-bar">
+            <div class="update-time">Последнее обновление данных: <strong id="last-update">--:--</strong></div>
+            <div class="stats-row">
+                <div class="stat-item">
+                    <span class="big-num" id="active-nodes">45</span>
+                    <span class="stat-label">Количество активных акустических узлов</span>
+                </div>
+                <div class="stat-item">
+                    <span class="big-num" id="active-alerts">2</span>
+                    <span class="stat-label">Количество активных тревог</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center: Map -->
+        <div class="card map-container">
+            <div id="map"></div>
+            <div class="status-indicator" id="status">
+                <div class="status-dot"></div>
+                <span id="status-text">Отключено</span>
+            </div>
+            <div class="events-log" id="events"></div>
+            <div class="map-controls">
+                <button class="map-btn" onclick="map.zoomIn()">+</button>
+                <button class="map-btn" onclick="map.zoomOut()">&minus;</button>
+                <button class="map-btn mic-btn" title="Показать микрофоны" onclick="centerMics()">&#x1F399;</button>
+            </div>
+            <div class="demo-controls">
+                <button class="demo-btn" onclick="startDemo('chainsaw')">Бензопила</button>
+                <button class="demo-btn" onclick="startDemo('gunshot')">Выстрел</button>
+                <button class="demo-btn" onclick="startDemo('normal')">Птицы</button>
+            </div>
+        </div>
+
+        <!-- Right: Event detail -->
+        <div class="card event-detail" id="event-detail">
+            <div class="gps-row">
+                <span class="gps-coords" id="gps-coords">GPS: --, --</span>
+                <span class="threat-badge threat-high" id="threat-level">--</span>
+            </div>
+            <div class="alert-title" id="alert-title">
+                <span class="warn-icon">&#9888;</span>
+                <span id="alert-type">Ожидание события...</span>
+            </div>
+            <div class="event-type-badge" id="event-type">Тип события: --</div>
+            <div class="detail-row">
+                <div class="detail-label">Точность локации</div>
+                <div class="detail-value" id="location-accuracy">--%</div>
+            </div>
+            <div class="photo-placeholder" id="photo-area">
+                <span>Фото не получено</span>
+            </div>
+            <div class="recommendations">
+                <div class="rec-header">
+                    <span>Рекомендации</span>
+                    <span class="yandex-gpt">&#9679; YandexGPT <span title="Генерируется ИИ">&#9432;</span></span>
+                    <span class="contacts">Контакты<br><strong id="contact-phone">+7 940 678 21 52</strong></span>
+                </div>
+                <ol class="rec-list" id="rec-list">
+                    <li data-num="1">Зафиксируйте координаты</li>
+                    <li data-num="2">Не приближайтесь</li>
+                    <li data-num="3">Сделайте фото</li>
+                    <li data-num="4">Вызовите группу</li>
+                </ol>
+                <div class="rec-expand" id="rec-expand">
+                    <button title="Развернуть">&#10095;</button>
+                </div>
+            </div>
+            <div class="forest-code-link">
+                <span>Лесной кодекс РФ</span>
+                <span>&#10095;</span>
+            </div>
+        </div>
+
+        <!-- Bottom row: stats + chart -->
+        <div class="bottom-row">
+            <div class="card stat-card">
+                <div><span class="stat-big" id="total-alerts">123</span></div>
+                <div class="stat-desc">Количество тревог за период</div>
+                <button class="month-selector" id="month-sel-stats">Апрель 2026 &#709;</button>
+            </div>
+            <div class="card stat-card">
+                <div><span class="stat-big" id="avg-response">25</span> <span class="stat-unit">мин</span></div>
+                <div class="stat-desc">Среднее время реакции инспектора</div>
+            </div>
+            <div class="card chart-card">
+                <div class="chart-header">
+                    <h4>Динамика тревог</h4>
+                    <button class="month-selector" id="month-sel-chart">Апрель 2026 &#709;</button>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="alertsChart"></canvas>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
         /* ---- Leaflet map ---- */
-        const map = L.map('map').setView([55.751, 37.613], 15);
+        const map = L.map('map', { zoomControl: false }).setView([55.751, 37.613], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap'
         }).addTo(map);
 
         const markers = {};
+        let micPositions = [];
         const eventsDiv = document.getElementById('events');
         const statusDiv = document.getElementById('status');
         const statusText = document.getElementById('status-text');
 
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('last-update').textContent =
+                now.getHours().toString().padStart(2, '0') + ':' +
+                now.getMinutes().toString().padStart(2, '0');
+        }
+        updateTime();
+
+        function centerMics() {
+            if (micPositions.length) {
+                const group = L.latLngBounds(micPositions.map(m => [m.lat, m.lon]));
+                map.fitBounds(group.pad(0.3));
+            }
+        }
+
         function addEvent(labelText, detail, cls) {
             const el = document.createElement('div');
-            el.className = 'event ' + (cls || '');
+            el.className = 'event-item ' + (cls || '');
             const span = document.createElement('span');
-            span.className = 'label';
+            span.className = 'ev-label';
             span.textContent = labelText;
             el.appendChild(span);
             if (detail) {
                 el.appendChild(document.createTextNode(' ' + detail));
             }
             eventsDiv.prepend(el);
+            // Keep max 15 events visible
+            while (eventsDiv.children.length > 15) {
+                eventsDiv.removeChild(eventsDiv.lastChild);
+            }
         }
+
+        /* ---- Update right panel ---- */
+        function updateDetail(data) {
+            if (data.lat !== undefined && data.lon !== undefined) {
+                document.getElementById('gps-coords').textContent =
+                    'GPS: ' + data.lat.toFixed(2) + ', ' + data.lon.toFixed(2);
+            }
+        }
+
+        /* ---- Chart.js ---- */
+        const chartCtx = document.getElementById('alertsChart').getContext('2d');
+        const daysInMonth = [];
+        const alertData = [];
+        for (let i = 3; i <= 23; i++) {
+            daysInMonth.push(i + ' апр');
+            alertData.push(Math.floor(Math.random() * 5) + 1);
+        }
+        // Make specific data points match mockup feel
+        alertData[7] = 4; // 10 apr = 4
+
+        const alertsChart = new Chart(chartCtx, {
+            type: 'line',
+            data: {
+                labels: daysInMonth,
+                datasets: [{
+                    data: alertData,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2,
+                    pointHoverRadius: 6,
+                    borderWidth: 2,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#232738',
+                        titleColor: '#e8e8ec',
+                        bodyColor: '#e8e8ec',
+                        borderColor: '#2a2e3f',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.parsed.y + ' тревог';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#9ca3af', font: { size: 10 }, maxRotation: 0 },
+                        grid: { display: false }
+                    },
+                    y: {
+                        ticks: { color: '#9ca3af', font: { size: 10 }, stepSize: 3 },
+                        grid: { color: 'rgba(42, 46, 63, 0.5)', drawBorder: false },
+                        suggestedMin: 0,
+                        suggestedMax: 7
+                    }
+                }
+            }
+        });
 
         /* ---- WebSocket ---- */
         let ws;
+        let activeAlerts = 0;
         function connect() {
             const proto = location.protocol === 'https:' ? 'wss' : 'ws';
             ws = new WebSocket(proto + '://' + location.host + '/ws');
             ws.onopen = function() {
-                statusDiv.className = 'connected';
+                statusDiv.className = 'status-indicator connected';
                 statusText.textContent = 'Подключено';
+                document.getElementById('online-badge').textContent = 'Онлайн';
+                document.getElementById('online-badge').style.background = 'var(--accent-green)';
             };
             ws.onclose = function() {
-                statusDiv.className = '';
+                statusDiv.className = 'status-indicator';
                 statusText.textContent = 'Переподключение...';
+                document.getElementById('online-badge').textContent = 'Офлайн';
+                document.getElementById('online-badge').style.background = 'var(--accent-red)';
                 setTimeout(connect, 2000);
             };
             ws.onmessage = function(e) {
                 const d = JSON.parse(e.data);
                 handleEvent(d);
+                updateTime();
             };
         }
         connect();
@@ -104,29 +840,64 @@
         function handleEvent(d) {
             switch (d.event) {
                 case 'mic_active':
+                    micPositions = d.mics;
                     d.mics.forEach(function(m, i) {
                         const name = 'Mic ' + 'ABC'[i];
-                        L.circleMarker([m.lat, m.lon], {radius: 6, color: '#22d3ee', fillOpacity: 0.8})
-                         .addTo(map).bindPopup(name);
+                        L.circleMarker([m.lat, m.lon], {
+                            radius: 8, color: '#3b82f6', fillColor: '#3b82f6',
+                            fillOpacity: 0.7, weight: 2
+                        }).addTo(map).bindPopup(name);
                     });
                     map.setView([d.mics[0].lat, d.mics[0].lon], 15);
+                    document.getElementById('active-nodes').textContent =
+                        parseInt(document.getElementById('active-nodes').textContent);
                     addEvent('Микрофоны активны', '', 'low');
                     break;
 
                 case 'audio_classified':
                     var isThreat = d['class'] !== 'birds' && d['class'] !== 'silence';
-                    addEvent(
-                        'Звук:',
-                        d['class'] + ' (' + (d.confidence*100).toFixed(0) + '%)',
-                        isThreat ? 'high' : 'low'
-                    );
+                    var confPercent = (d.confidence * 100).toFixed(0);
+                    addEvent('Звук:', d['class'] + ' (' + confPercent + '%)', isThreat ? 'high' : 'low');
+
+                    // Update right panel
+                    if (isThreat) {
+                        var threatName = d['class'] === 'chainsaw' ? 'Незаконная рубка' :
+                                        d['class'] === 'gunshot' ? 'Незаконная охота' : d['class'];
+                        document.getElementById('alert-type').textContent = threatName;
+                        document.getElementById('event-type').textContent = 'Тип события: ' +
+                            (d['class'] === 'chainsaw' ? 'Бензопила' :
+                             d['class'] === 'gunshot' ? 'Выстрел' : d['class']);
+                        document.getElementById('threat-level').textContent = 'Высокий';
+                        document.getElementById('threat-level').className = 'threat-badge threat-high';
+                        document.getElementById('location-accuracy').textContent = confPercent + '%';
+                        activeAlerts++;
+                        document.getElementById('active-alerts').textContent = activeAlerts;
+                    } else {
+                        document.getElementById('alert-type').textContent = 'Нормальная активность';
+                        document.getElementById('event-type').textContent = 'Тип события: ' + d['class'];
+                        document.getElementById('threat-level').textContent = 'Низкий';
+                        document.getElementById('threat-level').className = 'threat-badge threat-low';
+                    }
                     break;
 
                 case 'location_found':
                     var errStr = d.error_m ? d.error_m.toFixed(0) : '?';
-                    L.circleMarker([d.lat, d.lon], {radius: 10, color: '#f59e0b', fillOpacity: 0.5})
-                     .addTo(map).bindPopup('Источник (' + errStr + 'м)');
+                    L.circle([d.lat, d.lon], {
+                        radius: d.error_m || 50,
+                        color: '#ef4444',
+                        fillColor: '#ef4444',
+                        fillOpacity: 0.2,
+                        weight: 2
+                    }).addTo(map);
+                    L.circleMarker([d.lat, d.lon], {
+                        radius: 10, color: '#ef4444', fillColor: '#ef4444',
+                        fillOpacity: 0.6, weight: 2
+                    }).addTo(map).bindPopup('Источник (' + errStr + 'м)');
                     addEvent('Источник:', d.lat.toFixed(4) + 'N ' + d.lon.toFixed(4) + 'E', 'medium');
+                    document.getElementById('gps-coords').textContent =
+                        'GPS: ' + d.lat.toFixed(2) + ', ' + d.lon.toFixed(2);
+                    var accuracy = d.error_m ? Math.max(0, Math.min(99, Math.round(100 - d.error_m))).toString() + '%' : '--%';
+                    document.getElementById('location-accuracy').textContent = accuracy;
                     break;
 
                 case 'agent_decision':
@@ -135,15 +906,28 @@
 
                 case 'drone_moving':
                     if (markers.drone) map.removeLayer(markers.drone);
-                    markers.drone = L.marker([d.lat, d.lon]).addTo(map).bindPopup('Дрон');
+                    var droneIcon = L.divIcon({
+                        html: '<div style="background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid #fff;"></div>',
+                        iconSize: [12, 12],
+                        className: ''
+                    });
+                    markers.drone = L.marker([d.lat, d.lon], { icon: droneIcon }).addTo(map).bindPopup('Дрон');
                     break;
 
                 case 'drone_photo':
                     addEvent('Фото получено', '', 'medium');
+                    if (d.drone_b64) {
+                        document.getElementById('photo-area').innerHTML =
+                            '<img src="data:image/jpeg;base64,' + d.drone_b64 + '" alt="Фото с дрона">';
+                    }
                     break;
 
                 case 'vision_classified':
                     addEvent('Визуально:', d.description, 'medium');
+                    // Update recommendations based on vision
+                    if (d.has_felling) {
+                        document.getElementById('alert-type').textContent = 'Незаконная рубка';
+                    }
                     break;
 
                 case 'alert_sent':
@@ -168,6 +952,16 @@
         async function startDemo(scenario) {
             eventsDiv.textContent = '';
             Object.values(markers).forEach(function(m) { map.removeLayer(m); });
+
+            // Reset right panel
+            document.getElementById('alert-type').textContent = 'Анализ...';
+            document.getElementById('event-type').textContent = 'Тип события: --';
+            document.getElementById('gps-coords').textContent = 'GPS: --, --';
+            document.getElementById('threat-level').textContent = '--';
+            document.getElementById('threat-level').className = 'threat-badge threat-high';
+            document.getElementById('location-accuracy').textContent = '--%';
+            document.getElementById('photo-area').innerHTML = '<span>Ожидание фото...</span>';
+
             try {
                 const r = await fetch('/api/v1/demo', {
                     method: 'POST',
@@ -178,6 +972,21 @@
                 addEvent('Запуск:', scenario, 'low');
             } catch (e) {
                 addEvent('Ошибка:', e.message, 'high');
+            }
+        }
+
+        /* ---- RAG query ---- */
+        async function queryRAG(question, context) {
+            try {
+                const r = await fetch('/api/v1/rag-query', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({question: question, context: context || ''})
+                });
+                const data = await r.json();
+                return data.answer;
+            } catch (e) {
+                return 'Ошибка запроса: ' + e.message;
             }
         }
     </script>
