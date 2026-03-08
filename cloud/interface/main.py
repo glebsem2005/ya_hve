@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import math
+import random
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -12,12 +14,52 @@ from cloud.notify.bot_app import start_bot, stop_bot
 logger = logging.getLogger(__name__)
 
 
+def _random_source_point(
+    mic_positions: list[tuple[float, float]], radius_m: float = 150.0
+) -> tuple[float, float]:
+    """Generate a random sound source near the centroid of mic positions."""
+    avg_lat = sum(p[0] for p in mic_positions) / len(mic_positions)
+    avg_lon = sum(p[1] for p in mic_positions) / len(mic_positions)
+    # Random distance 50-300m in random direction
+    dist = random.uniform(50.0, min(radius_m * 2, 300.0))
+    bearing = random.uniform(0, 2 * math.pi)
+    # Approximate degree offsets
+    dlat = (dist * math.cos(bearing)) / 111_320
+    dlon = (dist * math.sin(bearing)) / (111_320 * math.cos(math.radians(avg_lat)))
+    return round(avg_lat + dlat, 6), round(avg_lon + dlon, 6)
+
+
+async def _auto_demo():
+    """Auto-start a demo scenario after container boot."""
+    delay = random.uniform(15, 25)
+    logger.info("Auto-demo scheduled in %.0f seconds", delay)
+    await asyncio.sleep(delay)
+
+    from cloud.db.microphones import get_online
+
+    online_mics = get_online()[:3]
+    if len(online_mics) < 3:
+        logger.warning("Auto-demo: need 3 online mics, got %d", len(online_mics))
+        return
+
+    mic_coords = [(m.lat, m.lon) for m in online_mics]
+    source_lat, source_lon = _random_source_point(mic_coords)
+    scenario = random.choice(["chainsaw", "gunshot", "engine"])
+
+    logger.info("Auto-demo: %s at (%.4f, %.4f)", scenario, source_lat, source_lon)
+    try:
+        await _run_demo(scenario, source_lat=source_lat, source_lon=source_lon)
+    except Exception:
+        logger.exception("Auto-demo failed")
+
+
 @asynccontextmanager
 async def lifespan(app):
     try:
         await start_bot()
     except Exception:
         logger.exception("Failed to start Telegram bot polling")
+    asyncio.create_task(_auto_demo())
     yield
     await stop_bot()
 
@@ -62,6 +104,8 @@ async def index():
 
 class DemoRequest(BaseModel):
     scenario: str = "chainsaw"
+    source_lat: float | None = None
+    source_lon: float | None = None
 
 
 class DemoResponse(BaseModel):
@@ -71,8 +115,10 @@ class DemoResponse(BaseModel):
 
 @app.post("/api/v1/demo", response_model=DemoResponse)
 async def start_demo_v1(req: DemoRequest):
-    """Start a demo scenario. Future React/Flutter frontends use this endpoint."""
-    asyncio.create_task(_run_demo(req.scenario))
+    """Start a demo scenario. Optionally specify source coordinates."""
+    asyncio.create_task(
+        _run_demo(req.scenario, source_lat=req.source_lat, source_lon=req.source_lon)
+    )
     return DemoResponse(status="started", scenario=req.scenario)
 
 
@@ -595,7 +641,11 @@ async def start_demo_legacy(scenario: str = "chainsaw"):
     return {"status": "started", "scenario": scenario}
 
 
-async def _run_demo(scenario: str):
+async def _run_demo(
+    scenario: str,
+    source_lat: float | None = None,
+    source_lon: float | None = None,
+):
     from simulator.audio.mic_stream import MicSimulator
     from simulator.drone.drone_stream import DroneSimulator
     from simulator.lora.socket_relay import LoraRelay
@@ -607,22 +657,34 @@ async def _run_demo(scenario: str):
     from cloud.vision.classifier import classify_photo
     from cloud.agent.decision import compose_alert
     from cloud.notify.telegram import send_pending, send_confirmed
+    from cloud.db.microphones import get_online
     import os
 
-    mic_positions = [
-        MicPosition(
-            lat=float(os.getenv("MIC_A_LAT", 55.7510)),
-            lon=float(os.getenv("MIC_A_LON", 37.6130)),
-        ),
-        MicPosition(
-            lat=float(os.getenv("MIC_B_LAT", 55.7515)),
-            lon=float(os.getenv("MIC_B_LON", 37.6138)),
-        ),
-        MicPosition(
-            lat=float(os.getenv("MIC_C_LAT", 55.7508)),
-            lon=float(os.getenv("MIC_C_LON", 37.6142)),
-        ),
-    ]
+    # Read mic positions from DB (first 3 online), fallback to env vars
+    online_mics = get_online()[:3]
+    if len(online_mics) >= 3:
+        mic_positions = [MicPosition(lat=m.lat, lon=m.lon) for m in online_mics]
+    else:
+        mic_positions = [
+            MicPosition(
+                lat=float(os.getenv("MIC_A_LAT", 57.3697)),
+                lon=float(os.getenv("MIC_A_LON", 44.6200)),
+            ),
+            MicPosition(
+                lat=float(os.getenv("MIC_B_LAT", 57.3752)),
+                lon=float(os.getenv("MIC_B_LON", 44.6345)),
+            ),
+            MicPosition(
+                lat=float(os.getenv("MIC_C_LAT", 57.3631)),
+                lon=float(os.getenv("MIC_C_LON", 44.6489)),
+            ),
+        ]
+
+    mic_coords = [(m.lat, m.lon) for m in mic_positions]
+
+    # Generate random source if not specified
+    if source_lat is None or source_lon is None:
+        source_lat, source_lon = _random_source_point(mic_coords)
 
     home_lat = mic_positions[0].lat
     home_lon = mic_positions[0].lon
@@ -633,9 +695,22 @@ async def _run_demo(scenario: str):
             "mics": [{"lat": m.lat, "lon": m.lon} for m in mic_positions],
         }
     )
+    await broadcast(
+        {
+            "event": "source_point",
+            "lat": source_lat,
+            "lon": source_lon,
+            "scenario": scenario,
+        }
+    )
     await asyncio.sleep(0.5)
 
-    mic_sim = MicSimulator(scenario)
+    mic_sim = MicSimulator(
+        scenario,
+        source_lat=source_lat,
+        source_lon=source_lon,
+        mic_positions=mic_coords,
+    )
     signals, audio_paths = await mic_sim.get_signals()
 
     # Onset detection — only proceed if sharp sound detected

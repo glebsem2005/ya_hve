@@ -4,12 +4,14 @@ Each ranger has:
 - telegram_chat_id: where to send alerts
 - name: display name
 - zone: geographic bounding box (lat_min, lat_max, lon_min, lon_max)
+- current_lat/lon: last known position (for nearest-neighbor routing)
 - active: whether to send alerts to this ranger
 
 When an alert fires at (lat, lon), we find all rangers whose zone
 contains that point and notify ONLY them.
 """
 
+import math
 import sqlite3
 import os
 from dataclasses import dataclass
@@ -33,6 +35,8 @@ class Ranger:
     zone_lon_min: float
     zone_lon_max: float
     active: bool
+    current_lat: float | None = None
+    current_lon: float | None = None
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -64,15 +68,17 @@ def init_db() -> None:
 def _migrate_db() -> None:
     """Add columns that may be missing in existing databases."""
     conn = _get_conn()
-    try:
-        conn.execute(
-            "ALTER TABLE rangers ADD COLUMN badge_number TEXT NOT NULL DEFAULT ''"
-        )
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
-    finally:
-        conn.close()
+    for stmt in [
+        "ALTER TABLE rangers ADD COLUMN badge_number TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE rangers ADD COLUMN current_lat REAL",
+        "ALTER TABLE rangers ADD COLUMN current_lon REAL",
+    ]:
+        try:
+            conn.execute(stmt)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    conn.close()
 
 
 def add_ranger(
@@ -112,6 +118,8 @@ def add_ranger(
         zone_lon_min=zone_lon_min,
         zone_lon_max=zone_lon_max,
         active=True,
+        current_lat=None,
+        current_lon=None,
     )
 
 
@@ -159,6 +167,47 @@ def update_zone(
     return updated
 
 
+def update_position(chat_id: int, lat: float, lon: float) -> bool:
+    """Save ranger's current GPS position."""
+    conn = _get_conn()
+    cur = conn.execute(
+        "UPDATE rangers SET current_lat = ?, current_lon = ? WHERE chat_id = ?",
+        (lat, lon, chat_id),
+    )
+    conn.commit()
+    updated = cur.rowcount > 0
+    conn.close()
+    return updated
+
+
+def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distance in meters between two GPS points."""
+    R = 6_371_000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dphi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    )
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def get_nearest_rangers(lat: float, lon: float, limit: int = 3) -> list[Ranger]:
+    """Return nearest active rangers sorted by haversine distance.
+
+    Only includes rangers with a known position (current_lat/lon not NULL).
+    """
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM rangers WHERE active = 1 AND current_lat IS NOT NULL"
+    ).fetchall()
+    conn.close()
+    rangers = [_row_to_ranger(r) for r in rows]
+    rangers.sort(key=lambda r: _haversine(lat, lon, r.current_lat, r.current_lon))
+    return rangers[:limit]
+
+
 def get_all_rangers() -> list[Ranger]:
     """Get all rangers."""
     conn = _get_conn()
@@ -200,6 +249,8 @@ def _row_to_ranger(row: sqlite3.Row) -> Ranger:
         zone_lon_min=row["zone_lon_min"],
         zone_lon_max=row["zone_lon_max"],
         active=bool(row["active"]),
+        current_lat=row["current_lat"],
+        current_lon=row["current_lon"],
     )
 
 
