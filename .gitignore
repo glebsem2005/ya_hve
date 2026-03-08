@@ -4,3 +4,9 @@ __pycache__/
 .pytest_cache/
 *.sqlite
 .env
+
+# Security: prevent accidental commit of keys/certs
+*.pem
+*.key
+*.p12
+*.pfx
