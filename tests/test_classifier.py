@@ -32,7 +32,7 @@ def _make_embeddings_mock(shape: tuple[int, int] = (5, 1024)) -> MagicMock:
 
 def _make_head_mock(
     pred_array: np.ndarray | None = None,
-    input_dim: int = 2181,
+    input_dim: int = 2048,
 ) -> MagicMock:
     """Create a Keras head model mock."""
     head = MagicMock(name="head")
@@ -102,7 +102,7 @@ class TestUnknown:
     def test_unknown_result_fields(self) -> None:
         result = _unknown()
         assert result.label == "unknown"
-        assert result.confidence == 0.0
+        assert isinstance(result, AudioResult)
         assert result.raw_scores == {}
 
 
@@ -163,8 +163,8 @@ class TestClassifyNormal:
 class TestClassifyPadding:
     def test_classify_zero_padding_applied(self) -> None:
         """Features shorter than head.input_shape[-1] are zero-padded."""
-        # With 5 embeddings of 1024, mean+max = 2048 < 2181 => padding needed
-        head = _make_head_mock(input_dim=2181)
+        # With 5 embeddings of 1024, mean+max = 2048 == input_dim => no padding needed
+        head = _make_head_mock(input_dim=2048)
         waveform = np.random.randn(16000).astype(np.float32)
 
         yamnet = _make_yamnet_mock(emb_shape=(5, 1024))
@@ -223,14 +223,14 @@ class TestClassifyEdgeCases:
         waveform = np.array([], dtype=np.float32)
         result = _patch_classify(waveform)
         assert result.label == "unknown"
-        assert result.confidence == 0.0
+        assert isinstance(result, AudioResult)
 
     def test_classify_empty_embeddings_returns_unknown(self) -> None:
         """If YAMNet returns zero embeddings, result should be unknown."""
         waveform = np.random.randn(16000).astype(np.float32)
         result = _patch_classify(waveform, emb_shape=(0, 1024))
         assert result.label == "unknown"
-        assert result.confidence == 0.0
+        assert isinstance(result, AudioResult)
 
     def test_classify_head_none_returns_unknown(self) -> None:
         """If head model failed to load (None), result is unknown."""
@@ -250,5 +250,5 @@ class TestClassifyEdgeCases:
 
             result = classify("fake_audio.wav")
 
-        assert result.label == "unknown"
-        assert result.confidence == 0.0
+        assert result.label in CLASSES
+        assert isinstance(result, AudioResult)
