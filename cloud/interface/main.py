@@ -262,11 +262,29 @@ async def check_permit(req: PermitCheck):
     permits = get_permits_for_location(req.lat, req.lon)
     return {
         "has_valid_permit": has_permit,
-        "permits": [
-            {"id": p.id, "description": p.description}
-            for p in permits
-        ],
+        "permits": [{"id": p.id, "description": p.description} for p in permits],
     }
+
+
+# ---- RAG query API ----
+
+from cloud.agent.rag_agent import query_rag
+
+
+class RagQueryRequest(BaseModel):
+    question: str
+    context: str = ""
+
+
+class RagQueryResponse(BaseModel):
+    answer: str
+
+
+@app.post("/api/v1/rag-query", response_model=RagQueryResponse)
+async def rag_query_endpoint(req: RagQueryRequest):
+    """Query RAG agent with File Search + Web Search (Yandex AI Studio)."""
+    answer = await query_rag(req.question, req.context)
+    return RagQueryResponse(answer=answer)
 
 
 # ---- Gateway event forwarding ----
@@ -405,7 +423,13 @@ async def _run_demo(scenario: str):
 
     photo, _ = await asyncio.gather(
         drone_task(),
-        send_pending(location.lat, location.lon, audio_result.label, decision.reason),
+        send_pending(
+            location.lat,
+            location.lon,
+            audio_result.label,
+            decision.reason,
+            confidence=audio_result.confidence,
+        ),
     )
 
     vision_result = await classify_photo(photo.b64)
