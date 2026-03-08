@@ -207,6 +207,7 @@ async def test_alert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         reason="Test alert",
         confidence=confidence,
         gating_level="alert",
+        is_demo=True,
     )
 
 
@@ -296,7 +297,9 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     loc = update.message.location
     dist = _haversine(loc.latitude, loc.longitude, incident.lat, incident.lon)
 
-    if dist <= 500:
+    PROXIMITY_RADIUS_M = 1000
+
+    if incident.is_demo or dist <= PROXIMITY_RADIUS_M:
         incident.status = "on_site"
         await send_arrival_question(chat_id, incident)
     else:

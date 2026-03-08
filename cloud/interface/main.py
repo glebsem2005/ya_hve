@@ -789,6 +789,7 @@ async def _run_demo(
             audio_result.label,
             decision.reason,
             confidence=audio_result.confidence,
+            is_demo=True,
         ),
     )
 

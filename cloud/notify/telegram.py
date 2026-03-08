@@ -88,6 +88,7 @@ async def send_pending(
     reason: str,
     confidence: float = 0.0,
     gating_level: str | None = None,
+    is_demo: bool = False,
 ) -> Incident | None:
     """Send initial alert to all rangers covering this location.
 
@@ -108,6 +109,7 @@ async def send_pending(
         lon=lon,
         confidence=confidence,
         gating_level=level,
+        is_demo=is_demo,
     )
 
     text = (
@@ -173,6 +175,7 @@ async def send_pending_to_chat(
     reason: str,
     confidence: float = 0.0,
     gating_level: str | None = None,
+    is_demo: bool = False,
 ) -> Incident | None:
     """Send alert directly to a specific chat_id (for /test command)."""
     bot = Bot(token=BOT_TOKEN)
@@ -189,6 +192,7 @@ async def send_pending_to_chat(
         lon=lon,
         confidence=confidence,
         gating_level=level,
+        is_demo=is_demo,
     )
 
     text = (

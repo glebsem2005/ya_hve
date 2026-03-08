@@ -29,6 +29,7 @@ class Incident:
     ranger_report_raw: str | None = None
     ranger_report_legal: str | None = None
     protocol_pdf: bytes | None = None
+    is_demo: bool = False
 
 
 # incident_id -> Incident
@@ -44,6 +45,7 @@ def create_incident(
     lon: float,
     confidence: float,
     gating_level: str,
+    is_demo: bool = False,
 ) -> Incident:
     incident = Incident(
         id=str(uuid.uuid4()),
@@ -52,6 +54,7 @@ def create_incident(
         lon=lon,
         confidence=confidence,
         gating_level=gating_level,
+        is_demo=is_demo,
     )
     _incidents[incident.id] = incident
     return incident
