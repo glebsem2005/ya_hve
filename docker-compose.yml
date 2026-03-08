@@ -6,7 +6,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env.example
+      - .env
     volumes:
       - .:/app
       - yamnet_cache:/tmp/yamnet_cache
@@ -19,7 +19,7 @@ services:
     build: .
     command: sh -c "python demo/generate_audio.py && python -m edge.server"
     env_file:
-      - .env.example
+      - .env
     volumes:
       - ./demo/audio:/app/demo/audio
       - yamnet_cache:/tmp/yamnet_cache
@@ -31,7 +31,7 @@ services:
     ports:
       - "9000:9000"
     env_file:
-      - .env.example
+      - .env
     restart: unless-stopped
 
 volumes:
