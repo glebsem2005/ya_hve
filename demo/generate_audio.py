@@ -30,15 +30,33 @@ def generate_silence():
 
 
 def generate_chainsaw():
-    """Sawtooth ~100-400 Hz + lowpass noise — crude chainsaw approximation."""
-    t = np.linspace(0, DURATION, N_SAMPLES, endpoint=False)
-    # Frequency sweep 100-400 Hz
+    """Sawtooth ~100-400 Hz + lowpass noise — crude chainsaw approximation.
+
+    Structure: 1.0s quiet forest ambience → 50ms fade-in → 4.0s chainsaw.
+    The quiet lead-in lets the onset detector build a low baseline,
+    so the chainsaw start produces a high energy ratio (>>8.0 threshold).
+    """
+    rng = np.random.default_rng(42)
+    quiet_len = int(1.0 * SAMPLE_RATE)  # 1s quiet
+    fade_len = int(0.05 * SAMPLE_RATE)  # 50ms fade-in
+    saw_len = N_SAMPLES - quiet_len  # 4s chainsaw
+
+    # Quiet forest ambience (very low amplitude noise)
+    quiet = rng.normal(0, 0.005, quiet_len).astype(np.float32)
+
+    # Chainsaw phase: sawtooth ~100-400 Hz + noise
+    t = np.linspace(0, saw_len / SAMPLE_RATE, saw_len, endpoint=False)
     freq = 100 + 300 * (0.5 + 0.5 * np.sin(2 * np.pi * 0.5 * t))
     phase = np.cumsum(freq / SAMPLE_RATE)
     saw = 2.0 * (phase % 1.0) - 1.0
-    # Add noise
-    noise = np.random.default_rng(42).normal(0, 0.3, N_SAMPLES)
-    mixed = 0.6 * saw + 0.4 * noise
+    noise = rng.normal(0, 0.3, saw_len)
+    chainsaw = (0.6 * saw + 0.4 * noise).astype(np.float32)
+
+    # Fade-in: linear ramp over first 50ms of chainsaw
+    fade = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
+    chainsaw[:fade_len] *= fade
+
+    mixed = np.concatenate([quiet, chainsaw])
     mixed = np.clip(mixed, -1.0, 1.0).astype(np.float32)
     _save("chainsaw.wav", mixed)
 

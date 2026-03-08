@@ -1,7 +1,7 @@
 """Tests for edge.audio.onset — Sharp sound onset detector.
 
-16 tests covering onset detection, stateful behavior, cooldown,
-and edge cases.
+20 tests covering onset detection, sustained sound patterns,
+stateful behavior, cooldown, and edge cases.
 """
 
 from __future__ import annotations
@@ -114,7 +114,9 @@ class TestOnsetDetection:
 
 class TestOnsetEvent:
     def test_event_fields(self) -> None:
-        event = OnsetEvent(triggered=True, frame_index=5, energy_ratio=12.5, peak_energy=0.3)
+        event = OnsetEvent(
+            triggered=True, frame_index=5, energy_ratio=12.5, peak_energy=0.3
+        )
         assert event.triggered is True
         assert event.frame_index == 5
         assert event.energy_ratio == 12.5
@@ -210,3 +212,108 @@ class TestOnsetEdgeCases:
         event = detect_onset(waveform)
         assert isinstance(event, OnsetEvent)
         assert event.triggered
+
+
+# ---------------------------------------------------------------------------
+# Sustained sound onset (silence → long continuous sound)
+# ---------------------------------------------------------------------------
+
+
+def _sustained_chainsaw(
+    quiet_s: float = 1.0, loud_s: float = 4.0, sr: int = 16000
+) -> np.ndarray:
+    """Mimic demo/generate_audio.py chainsaw: quiet ambience → sustained buzz."""
+    rng = np.random.default_rng(42)
+    quiet = rng.normal(0, 0.005, int(sr * quiet_s)).astype(np.float32)
+
+    n_loud = int(sr * loud_s)
+    t = np.linspace(0, loud_s, n_loud, endpoint=False)
+    freq = 100 + 300 * (0.5 + 0.5 * np.sin(2 * np.pi * 0.5 * t))
+    phase = np.cumsum(freq / sr)
+    saw = 2.0 * (phase % 1.0) - 1.0
+    noise = rng.normal(0, 0.3, n_loud)
+    chainsaw = (0.6 * saw + 0.4 * noise).astype(np.float32)
+
+    fade_len = int(0.05 * sr)
+    chainsaw[:fade_len] *= np.linspace(0, 1, fade_len, dtype=np.float32)
+
+    return np.concatenate([quiet, chainsaw])
+
+
+def _sustained_engine(
+    quiet_s: float = 1.0, loud_s: float = 4.0, sr: int = 16000
+) -> np.ndarray:
+    """Quiet ambience → sustained engine hum (low-freq sine + harmonics)."""
+    rng = np.random.default_rng(99)
+    quiet = rng.normal(0, 0.005, int(sr * quiet_s)).astype(np.float32)
+
+    n_loud = int(sr * loud_s)
+    t = np.linspace(0, loud_s, n_loud, endpoint=False)
+    engine = (
+        0.4 * np.sin(2 * np.pi * 80 * t)
+        + 0.3 * np.sin(2 * np.pi * 160 * t)
+        + 0.2 * np.sin(2 * np.pi * 240 * t)
+    ).astype(np.float32)
+    engine += rng.normal(0, 0.1, n_loud).astype(np.float32)
+
+    fade_len = int(0.05 * sr)
+    engine[:fade_len] *= np.linspace(0, 1, fade_len, dtype=np.float32)
+
+    return np.concatenate([quiet, engine])
+
+
+class TestSustainedOnsetDetection:
+    """Tests for the pattern: quiet ambience → sustained loud sound.
+
+    This is the real-world pattern for chainsaw/engine — they start
+    abruptly and run continuously, unlike a gunshot impulse.
+    """
+
+    def test_silence_then_sustained_chainsaw_triggers(self) -> None:
+        """1s quiet → 4s chainsaw must trigger onset with ratio >= 8.0."""
+        waveform = _sustained_chainsaw()
+        event = detect_onset(waveform)
+        assert event.triggered
+        assert event.energy_ratio >= 8.0
+
+    def test_silence_then_sustained_engine_triggers(self) -> None:
+        """1s quiet → 4s engine hum must trigger onset."""
+        waveform = _sustained_engine()
+        event = detect_onset(waveform)
+        assert event.triggered
+
+    def test_sustained_sound_without_quiet_lead_no_trigger(self) -> None:
+        """Chainsaw from sample 0 (no quiet lead-in) should NOT trigger.
+
+        This reproduces the original bug: generate_chainsaw() had no
+        silence prefix, so the baseline adapted to the chainsaw level
+        and ratio stayed ~2.2 (below threshold 8.0).
+
+        Uses OnsetDetector directly (no zero pre-fill) to match how
+        the edge server processes audio from MicSimulator.
+        """
+        rng = np.random.default_rng(42)
+        n = 16000 * 5
+        t = np.linspace(0, 5.0, n, endpoint=False)
+        freq = 100 + 300 * (0.5 + 0.5 * np.sin(2 * np.pi * 0.5 * t))
+        phase = np.cumsum(freq / 16000)
+        saw = 2.0 * (phase % 1.0) - 1.0
+        noise = rng.normal(0, 0.3, n)
+        mixed = np.clip(0.6 * saw + 0.4 * noise, -1.0, 1.0).astype(np.float32)
+
+        detector = OnsetDetector()
+        event = detector.detect(mixed)
+        assert not event.triggered
+
+    def test_demo_chainsaw_pattern_matches_threshold(self) -> None:
+        """Exact pattern from generate_chainsaw() must pass onset threshold.
+
+        Regression guard: if generate_audio.py changes, this test
+        ensures the onset detector still sees a sharp enough transition.
+        """
+        waveform = _sustained_chainsaw(quiet_s=1.0, loud_s=4.0)
+        event = detect_onset(waveform)
+        assert event.triggered, (
+            f"Demo chainsaw pattern failed onset detection "
+            f"(ratio={event.energy_ratio:.1f}, threshold=8.0)"
+        )
