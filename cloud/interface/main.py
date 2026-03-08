@@ -108,10 +108,10 @@ from cloud.db.rangers import (
 class RangerCreate(BaseModel):
     name: str
     chat_id: int
-    zone_lat_min: float = 0.0
-    zone_lat_max: float = 90.0
-    zone_lon_min: float = 0.0
-    zone_lon_max: float = 180.0
+    zone_lat_min: float
+    zone_lat_max: float
+    zone_lon_min: float
+    zone_lon_max: float
 
 
 class RangerZoneUpdate(BaseModel):

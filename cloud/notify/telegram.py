@@ -1,12 +1,14 @@
 """Telegram notifications — zone-based routing to rangers.
 
 Alerts are sent ONLY to rangers whose zone covers the event coordinates.
-If no rangers cover the location, the alert is logged but NOT sent
-to any fallback chat — this prevents spamming the admin with every
-detection in uncovered areas.
+If no rangers cover the location, the alert is logged but NOT sent.
+
+Rate limiting: each chat_id receives at most one alert per COOLDOWN_SECONDS
+to prevent notification spam from rapid detections.
 """
 
 import os
+import time
 import logging
 
 from telegram import Bot
@@ -17,6 +19,22 @@ from cloud.db.rangers import get_rangers_for_location, Ranger
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# Minimum seconds between alerts to the same chat_id
+COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", 300))
+
+# chat_id → timestamp of last sent alert
+_last_sent: dict[int, float] = {}
+
+
+def _is_rate_limited(chat_id: int) -> bool:
+    """Check if this chat_id was alerted recently."""
+    last = _last_sent.get(chat_id, 0.0)
+    return (time.monotonic() - last) < COOLDOWN_SECONDS
+
+
+def _mark_sent(chat_id: int) -> None:
+    _last_sent[chat_id] = time.monotonic()
 
 
 def _get_target_chat_ids(lat: float, lon: float) -> list[int]:
@@ -49,6 +67,10 @@ async def send_pending(lat: float, lon: float, audio_class: str, reason: str) ->
         return
 
     for chat_id in chat_ids:
+        if _is_rate_limited(chat_id):
+            logger.info("Rate-limited: skipping pending alert for chat_id=%s", chat_id)
+            continue
+        _mark_sent(chat_id)
         try:
             await bot.send_message(
                 chat_id=chat_id,
@@ -80,6 +102,10 @@ async def send_confirmed(alert: Alert, photo_bytes: bytes | None) -> None:
         return
 
     for chat_id in chat_ids:
+        if _is_rate_limited(chat_id):
+            logger.info("Rate-limited: skipping confirmed alert for chat_id=%s", chat_id)
+            continue
+        _mark_sent(chat_id)
         try:
             if photo_bytes:
                 await bot.send_photo(
