@@ -8,12 +8,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     fonts-dejavu-core \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --retries 5 --timeout 60 -r requirements.txt
+
+# Validate SDK installed correctly — fail build early if not
+RUN python -c "from yandex_ai_studio_sdk import AIStudio; print('SDK OK')"
 
 COPY . .
 
