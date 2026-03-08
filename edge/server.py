@@ -223,12 +223,20 @@ async def run():
     logger.info("Edge server started — onset-triggered mode")
     logger.info("Microphone will trigger ONLY on sharp sounds")
 
+    sim_already_fired = False
+
     try:
         while True:
             try:
                 mic_mode = os.getenv("MIC_MODE", "sim")
                 signals = None
                 audio_paths = None
+
+                # In sim mode, don't re-run the same scenario in a
+                # tight loop.  Wait for the next demo API call instead.
+                if mic_mode == "sim" and sim_already_fired:
+                    await asyncio.sleep(30)
+                    continue
 
                 # --- Onset-triggered acquisition ---
                 try:
@@ -258,6 +266,11 @@ async def run():
                             await asyncio.sleep(10)
                             detector.reset()
                             continue
+
+                        # In sim mode, process once then wait for next
+                        # demo trigger (don't re-trigger the same scenario
+                        # in a tight loop — that causes constant pings)
+                        sim_already_fired = True
 
                 except Exception as e:
                     logger.error("Failed to acquire audio signals: %s", e)
@@ -302,6 +315,12 @@ async def run():
 
                 decision = decide(audio, location)
                 logger.info("Decision: %s", decision.reason)
+
+                if not decision.send_drone and not decision.send_lora:
+                    logger.info("No action needed — skipping drone and notification")
+                    await asyncio.sleep(5)
+                    detector.reset()
+                    continue
 
                 if decision.send_drone:
                     # --- Drone operations ---
