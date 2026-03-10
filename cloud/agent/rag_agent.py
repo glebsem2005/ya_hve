@@ -164,6 +164,51 @@ async def query_protocol(audio_class: str, lat: float, lon: float) -> str:
     return await _call_yandex_plain(prompt)
 
 
+async def legalize_report(audio_class: str, raw_text: str) -> str:
+    """Rewrite a ranger's raw field report in formal legal language.
+
+    Used for the protocol PDF — transforms colloquial descriptions
+    into legally sound wording suitable for an administrative protocol.
+    """
+    context = CLASS_CONTEXT.get(audio_class, f"нарушение ({audio_class})")
+
+    prompt = (
+        f"Перепиши следующее описание нарушения юридическим языком "
+        f"для раздела «Описание» протокола об административном правонарушении.\n"
+        f"Тип нарушения: {context}.\n"
+        f"Не добавляй координаты, дату, ФИО или статьи закона — "
+        f"только формализованное описание фактов.\n\n"
+        f"Исходное описание инспектора:\n{raw_text}"
+    )
+
+    if SEARCH_INDEX_ID:
+        return await _call_yandex_with_sdk(prompt)
+    return await _call_yandex_plain(prompt)
+
+
+async def query_legal_articles(audio_class: str, lat: float, lon: float) -> str:
+    """Return ONLY applicable legal articles for a violation type.
+
+    Unlike query_protocol() which returns a full template, this function
+    asks for a concise list of relevant articles from ЛК РФ, КоАП, УК РФ
+    with short descriptions — suitable for the «Правовая база» PDF section.
+    """
+    context = CLASS_CONTEXT.get(audio_class, f"неизвестное нарушение ({audio_class})")
+
+    prompt = (
+        f"Обнаружено: {context}\n"
+        f"Координаты: {lat:.4f}°N, {lon:.4f}°E\n\n"
+        f"Перечисли ТОЛЬКО применимые статьи законов (ЛК РФ, КоАП, УК РФ) "
+        f"с краткой формулировкой каждой статьи.\n"
+        f"Не составляй шаблон протокола, не указывай координаты, даты, "
+        f"поля для заполнения — только список статей."
+    )
+
+    if SEARCH_INDEX_ID:
+        return await _call_yandex_with_sdk(prompt)
+    return await _call_yandex_plain(prompt)
+
+
 async def query_rag(question: str, context: str = "") -> str:
     """General-purpose RAG query for the REST API endpoint."""
     prompt = question

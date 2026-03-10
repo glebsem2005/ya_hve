@@ -2,9 +2,13 @@
 
 Each microphone has coordinates within Varnavino forestry district,
 zone type (forest protection category), and operational status.
+
+Microphones are placed on a diamond (rhombus) grid with ~350 m spacing
+for maximum acoustic coverage of the district.
 """
 
 import sqlite3
+import math
 import os
 import random
 from dataclasses import dataclass
@@ -129,31 +133,84 @@ def _assign_sub_district(lat: float, lon: float) -> str:
     return "varnavinskoye"  # default
 
 
-def seed_microphones(n: int = 20, seed: int = 42) -> list[Microphone]:
-    """Generate N microphones with random coordinates inside Varnavino bbox.
+def _build_diamond_grid(
+    spacing_m: float = 350.0,
+) -> list[tuple[float, float]]:
+    """Build a diamond (rhombus) grid of (lat, lon) points inside Varnavino bbox.
 
-    Zone type distributed proportionally (~80% exploitation, etc.).
-    ~15% randomly offline/broken.
+    In a diamond grid odd rows are offset by half the column spacing,
+    and the vertical row gap equals spacing × √3 / 2 ≈ 0.866 × spacing.
+    This gives the densest uniform coverage for circular sensor footprints.
+
+    Args:
+        spacing_m: Distance between neighbouring microphones in metres
+                   (300-400 m recommended for full acoustic coverage).
+
+    Returns:
+        List of (lat, lon) tuples covering the district.
     """
-    rng = random.Random(seed)
+    centre_lat = (LAT_MIN + LAT_MAX) / 2  # ≈ 57.3°
+    m_per_deg_lat = 111_320.0
+    m_per_deg_lon = 111_320.0 * math.cos(math.radians(centre_lat))
 
+    row_step_deg = (spacing_m * math.sqrt(3) / 2) / m_per_deg_lat
+    col_step_deg = spacing_m / m_per_deg_lon
+
+    points: list[tuple[float, float]] = []
+    row_idx = 0
+    lat = LAT_MIN
+    while lat <= LAT_MAX:
+        lon_offset = (col_step_deg / 2) if (row_idx % 2 == 1) else 0.0
+        lon = LON_MIN + lon_offset
+        while lon <= LON_MAX:
+            points.append((round(lat, 6), round(lon, 6)))
+            lon += col_step_deg
+        lat += row_step_deg
+        row_idx += 1
+
+    return points
+
+
+# Default grid spacing in metres.
+# 1 km side → each mic covers ≈ 1 km radius; ≈ 3 000 nodes for Varnavino.
+GRID_SPACING_M = float(os.getenv("MIC_GRID_SPACING_M", "1000"))
+
+
+def seed_microphones(
+    spacing_m: float | None = None,
+    seed: int = 42,
+) -> list[Microphone]:
+    """Populate the database with microphones on a diamond grid.
+
+    Grid spacing is ~350 m by default (configurable via MIC_GRID_SPACING_M
+    env-var or the *spacing_m* argument).  Zone types are distributed
+    proportionally (~80 % exploitation, etc.).  ~15 % of nodes are randomly
+    marked offline/broken.
+
+    If the table is already populated the function returns the existing rows.
+    """
+    if spacing_m is None:
+        spacing_m = GRID_SPACING_M
+
+    rng = random.Random(seed)
     conn = _get_conn()
+
     # Don't re-seed if already populated
     count = conn.execute("SELECT COUNT(*) FROM microphones").fetchone()[0]
-    if count >= n:
+    if count > 0:
         rows = conn.execute("SELECT * FROM microphones").fetchall()
         conn.close()
         return [_row_to_mic(r) for r in rows]
 
-    mics = []
-    for i in range(1, n + 1):
-        mic_uid = f"MIC-{i:03d}"
-        lat = round(rng.uniform(LAT_MIN, LAT_MAX), 6)
-        lon = round(rng.uniform(LON_MIN, LON_MAX), 6)
+    grid = _build_diamond_grid(spacing_m)
+
+    mics: list[Microphone] = []
+    for i, (lat, lon) in enumerate(grid, start=1):
+        mic_uid = f"MIC-{i:04d}"
         zone_type = rng.choices(ZONE_TYPES, weights=ZONE_WEIGHTS, k=1)[0]
         sub_district = _assign_sub_district(lat, lon)
 
-        # ~15% offline/broken
+        # ~15 % offline / broken
         status_roll = rng.random()
         if status_roll < 0.10:
             status = "offline"
@@ -168,7 +225,8 @@ def seed_microphones(n: int = 20, seed: int = 42) -> list[Microphone]:
         try:
             conn.execute(
                 """INSERT OR IGNORE INTO microphones
-                   (mic_uid, lat, lon, zone_type, sub_district, status, battery_pct, district_slug, installed_at)
+                   (mic_uid, lat, lon, zone_type, sub_district, status,
+                    battery_pct, district_slug, installed_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     mic_uid,
