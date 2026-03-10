@@ -78,7 +78,8 @@ class YDBMicrophoneRepository(MicrophoneRepository):
 
         count = pool.retry_operation_sync(_count)
         if count > 0:
-            return self.get_all()
+            logger.info("Microphones already seeded (%d rows), skipping", count)
+            return []
 
         rng = random.Random(seed)
         grid = _build_diamond_grid(spacing_m)
@@ -100,9 +101,18 @@ class YDBMicrophoneRepository(MicrophoneRepository):
             battery = round(rng.uniform(20.0, 100.0), 1)
             installed_at = f"2026-{rng.randint(1, 3):02d}-{rng.randint(1, 28):02d}"
 
-            def _ins(session, _i=i, _uid=mic_uid, _lat=lat, _lon=lon,
-                     _zt=zone_type, _sd=sub_district, _st=status,
-                     _bp=battery, _ia=installed_at):
+            def _ins(
+                session,
+                _i=i,
+                _uid=mic_uid,
+                _lat=lat,
+                _lon=lon,
+                _zt=zone_type,
+                _sd=sub_district,
+                _st=status,
+                _bp=battery,
+                _ia=installed_at,
+            ):
                 session.transaction().execute(
                     """
                     UPSERT INTO microphones (id, mic_uid, lat, lon,
@@ -129,18 +139,20 @@ class YDBMicrophoneRepository(MicrophoneRepository):
 
             pool.retry_operation_sync(_ins)
 
-            mics.append(Microphone(
-                id=i,
-                mic_uid=mic_uid,
-                lat=lat,
-                lon=lon,
-                zone_type=zone_type,
-                sub_district=sub_district,
-                status=status,
-                battery_pct=battery,
-                district_slug="varnavino",
-                installed_at=installed_at,
-            ))
+            mics.append(
+                Microphone(
+                    id=i,
+                    mic_uid=mic_uid,
+                    lat=lat,
+                    lon=lon,
+                    zone_type=zone_type,
+                    sub_district=sub_district,
+                    status=status,
+                    battery_pct=battery,
+                    district_slug="varnavino",
+                    installed_at=installed_at,
+                )
+            )
 
         return mics
 
