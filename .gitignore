@@ -10,3 +10,9 @@ __pycache__/
 *.key
 *.p12
 *.pfx
+
+# ML model weights
+*.keras
+*.h5
+*.npz
+*.tflite
