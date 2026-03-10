@@ -462,7 +462,7 @@ class TestPhotoHandler:
         await handle_inspector_photo(update, MagicMock())
 
         text = update.message.reply_text.call_args[0][0]
-        assert "ошибка" in text.lower()
+        assert "не удалось" in text.lower()
 
 
 # ---------- TestTextOnSite ----------

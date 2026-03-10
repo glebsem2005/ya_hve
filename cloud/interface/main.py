@@ -32,6 +32,9 @@ def _random_source_point(
 
 async def _auto_demo():
     """Auto-start a demo scenario after container boot."""
+    if os.getenv("DISABLE_AUTO_DEMO"):
+        logger.info("Auto-demo disabled by DISABLE_AUTO_DEMO env var")
+        return
     delay = random.uniform(15, 25)
     logger.info("Auto-demo scheduled in %.0f seconds", delay)
     await asyncio.sleep(delay)

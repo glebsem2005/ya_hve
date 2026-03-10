@@ -472,7 +472,9 @@ async def handle_inspector_photo(
         await update.message.reply_text(reply, parse_mode="Markdown")
     except Exception as e:
         logger.exception("Photo classification failed")
-        await update.message.reply_text(f"Ошибка анализа фото: {e}")
+        await update.message.reply_text(
+            "Не удалось проанализировать фото. Попробуйте ещё раз или опишите ситуацию текстом."
+        )
 
 
 # ---------- Text handler (for on_site report without voice) ----------

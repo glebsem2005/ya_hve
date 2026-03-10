@@ -975,8 +975,8 @@
 
                 case 'vision_classified': {
                     incident.vision = d;
-                    addSection('vision', 'VISION', buildVision(d));
-                    logEvent('VISION', d.has_felling ? 'рубка обнаружена' : 'норма', 'medium');
+                    addSection('vision', 'АНАЛИЗ ФОТО', buildVision(d));
+                    logEvent('АНАЛИЗ ФОТО', d.has_felling ? 'рубка обнаружена' : 'норма', 'medium');
                     break;
                 }
 

@@ -62,22 +62,26 @@ async def compose_alert(
 
 
 async def _call_yandex(user_prompt: str) -> str:
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            API_URL,
-            headers={"Authorization": f"Api-Key {YANDEX_API_KEY}"},
-            json={
-                "modelUri": f"gpt://{YANDEX_FOLDER_ID}/yandexgpt",
-                "completionOptions": {
-                    "stream": False,
-                    "temperature": 0.2,
-                    "maxTokens": 200,
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                API_URL,
+                headers={"Authorization": f"Api-Key {YANDEX_API_KEY}"},
+                json={
+                    "modelUri": f"gpt://{YANDEX_FOLDER_ID}/yandexgpt",
+                    "completionOptions": {
+                        "stream": False,
+                        "temperature": 0.2,
+                        "maxTokens": 200,
+                    },
+                    "messages": [
+                        {"role": "system", "text": SYSTEM_PROMPT},
+                        {"role": "user", "text": user_prompt},
+                    ],
                 },
-                "messages": [
-                    {"role": "system", "text": SYSTEM_PROMPT},
-                    {"role": "user", "text": user_prompt},
-                ],
-            },
-        )
-    resp.raise_for_status()
-    return resp.json()["result"]["alternatives"][0]["message"]["text"]
+            )
+        resp.raise_for_status()
+        return resp.json()["result"]["alternatives"][0]["message"]["text"]
+    except Exception:
+        logger.exception("YandexGPT call failed")
+        return "Обнаружено нарушение. Требуется проверка инспектором на месте."

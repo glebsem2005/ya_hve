@@ -10,6 +10,8 @@ __pycache__/
 *.key
 *.p12
 *.pfx
+sa-key.json
+*-sa-key.json
 
 # ML model weights
 *.keras
