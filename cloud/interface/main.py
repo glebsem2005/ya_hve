@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from cloud.notify.bot_app import start_bot, stop_bot
+from cloud.notify.drone_bot_app import start_drone_bot, stop_drone_bot
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,11 @@ async def _auto_demo():
 
     from cloud.db.microphones import get_online
 
-    online_mics = get_online()[:3]
+    try:
+        online_mics = get_online()[:3]
+    except Exception:
+        logger.warning("Auto-demo: failed to fetch online mics")
+        return
     if len(online_mics) < 3:
         logger.warning("Auto-demo: need 3 online mics, got %d", len(online_mics))
         return
@@ -62,9 +67,14 @@ async def lifespan(app):
     try:
         await start_bot()
     except Exception:
-        logger.exception("Failed to start Telegram bot polling")
+        logger.exception("Failed to start Ranger bot polling")
+    try:
+        await start_drone_bot()
+    except Exception:
+        logger.exception("Failed to start Drone bot polling")
     asyncio.create_task(_auto_demo())
     yield
+    await stop_drone_bot()
     await stop_bot()
 
 

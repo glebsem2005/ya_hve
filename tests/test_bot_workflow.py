@@ -444,76 +444,13 @@ class TestPhotoHandler:
         assert incident.ranger_photo_b64 is not None
 
     @pytest.mark.asyncio
-    @patch("cloud.vision.classifier.classify_photo", new_callable=AsyncMock)
-    async def test_standalone_vision_classification(self, mock_classify):
-        result = MagicMock()
-        result.description = "Лес и тропинка"
-        result.has_felling = False
-        result.has_human = False
-        result.has_fire = False
-        mock_classify.return_value = result
-
-        # No active incident
+    async def test_photo_no_incident_redirects_to_drone_bot(self):
+        # No active incident — ranger bot redirects to drone bot
         update = _make_photo_update(2100)
         await handle_inspector_photo(update, MagicMock())
 
-        mock_classify.assert_called_once()
         text = update.message.reply_text.call_args[0][0]
-        assert "нарушений не обнаружено" in text.lower()
-        # broadcast: vision_classified, drone_photo, pipeline_end
-        assert _mock_main_module.broadcast.call_count == 3
-
-    @pytest.mark.asyncio
-    @patch("cloud.notify.telegram.send_confirmed", new_callable=AsyncMock)
-    @patch(
-        "cloud.agent.decision.compose_alert",
-        new_callable=AsyncMock,
-        return_value="Alert text",
-    )
-    @patch("cloud.notify.telegram.send_pending", new_callable=AsyncMock)
-    @patch("cloud.vision.classifier.classify_photo", new_callable=AsyncMock)
-    async def test_standalone_photo_with_threat_creates_incident(
-        self,
-        mock_classify,
-        mock_send_pending,
-        mock_compose_alert,
-        mock_send_confirmed,
-    ):
-        result = MagicMock()
-        result.description = "Видна рубка деревьев"
-        result.has_felling = True
-        result.has_human = False
-        result.has_fire = False
-        mock_classify.return_value = result
-        mock_send_pending.return_value = MagicMock()
-
-        update = _make_photo_update(2150)
-        await handle_inspector_photo(update, MagicMock())
-
-        mock_classify.assert_called_once()
-        mock_send_pending.assert_called_once()
-        assert mock_send_pending.call_args.kwargs.get("is_demo") is True
-        mock_compose_alert.assert_called_once()
-        mock_send_confirmed.assert_called_once()
-        # send_confirmed receives photo_bytes as second positional arg
-        assert mock_send_confirmed.call_args[0][1] == b"fake-photo"
-        # broadcast: vision_classified, drone_photo, alert_sent, pipeline_end
-        assert _mock_main_module.broadcast.call_count == 4
-        text = update.message.reply_text.call_args[0][0]
-        assert "инцидент создан" in text.lower()
-
-    @pytest.mark.asyncio
-    @patch(
-        "cloud.vision.classifier.classify_photo",
-        new_callable=AsyncMock,
-        side_effect=Exception("API error"),
-    )
-    async def test_vision_error(self, mock_classify):
-        update = _make_photo_update(2200)
-        await handle_inspector_photo(update, MagicMock())
-
-        text = update.message.reply_text.call_args[0][0]
-        assert "не удалось" in text.lower()
+        assert "нет активного инцидента" in text.lower()
 
 
 # ---------- TestTextOnSite ----------
