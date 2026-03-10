@@ -81,9 +81,10 @@ def get_pool():
 
 
 def execute_query(session, sql: str, params: dict | None = None):
-    """Execute a parameterized YDB query with DECLARE-based type binding."""
+    """Execute a parameterized YDB query using prepare() for type binding."""
     if params:
-        return session.transaction().execute(sql, params, commit_tx=True)
+        prepared = session.prepare(sql)
+        return session.transaction().execute(prepared, params, commit_tx=True)
     return session.transaction().execute(sql, commit_tx=True)
 
 
