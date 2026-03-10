@@ -4,11 +4,20 @@ All external services (STT, Vision, RAG, YandexGPT) are mocked.
 """
 
 import os
+import sys
 import tempfile
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+# cloud.interface.main requires FastAPI (not in test env) — register mock module
+import cloud.interface
+
+_mock_main_module = MagicMock()
+_mock_main_module.broadcast = AsyncMock()
+sys.modules["cloud.interface.main"] = _mock_main_module
+cloud.interface.main = _mock_main_module
 
 _tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
 _tmp.close()
@@ -143,6 +152,7 @@ def _fresh_state():
     _incidents.clear()
     _chat_to_incident.clear()
     _registration_state.clear()
+    _mock_main_module.broadcast.reset_mock()
     yield
 
 
@@ -450,6 +460,47 @@ class TestPhotoHandler:
         mock_classify.assert_called_once()
         text = update.message.reply_text.call_args[0][0]
         assert "нарушений не обнаружено" in text.lower()
+        # broadcast: vision_classified, drone_photo, pipeline_end
+        assert _mock_main_module.broadcast.call_count == 3
+
+    @pytest.mark.asyncio
+    @patch("cloud.notify.telegram.send_confirmed", new_callable=AsyncMock)
+    @patch(
+        "cloud.agent.decision.compose_alert",
+        new_callable=AsyncMock,
+        return_value="Alert text",
+    )
+    @patch("cloud.notify.telegram.send_pending", new_callable=AsyncMock)
+    @patch("cloud.vision.classifier.classify_photo", new_callable=AsyncMock)
+    async def test_standalone_photo_with_threat_creates_incident(
+        self,
+        mock_classify,
+        mock_send_pending,
+        mock_compose_alert,
+        mock_send_confirmed,
+    ):
+        result = MagicMock()
+        result.description = "Видна рубка деревьев"
+        result.has_felling = True
+        result.has_human = False
+        result.has_fire = False
+        mock_classify.return_value = result
+        mock_send_pending.return_value = MagicMock()
+
+        update = _make_photo_update(2150)
+        await handle_inspector_photo(update, MagicMock())
+
+        mock_classify.assert_called_once()
+        mock_send_pending.assert_called_once()
+        assert mock_send_pending.call_args.kwargs.get("is_demo") is True
+        mock_compose_alert.assert_called_once()
+        mock_send_confirmed.assert_called_once()
+        # send_confirmed receives photo_bytes as second positional arg
+        assert mock_send_confirmed.call_args[0][1] == b"fake-photo"
+        # broadcast: vision_classified, drone_photo, alert_sent, pipeline_end
+        assert _mock_main_module.broadcast.call_count == 4
+        text = update.message.reply_text.call_args[0][0]
+        assert "инцидент создан" in text.lower()
 
     @pytest.mark.asyncio
     @patch(
