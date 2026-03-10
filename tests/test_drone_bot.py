@@ -107,6 +107,42 @@ class TestDroneBot:
         assert "инцидент создан" in text.lower()
 
     @pytest.mark.asyncio
+    @patch("cloud.notify.drone_bot_handlers.broadcast", new_callable=AsyncMock)
+    @patch(
+        "cloud.agent.decision.compose_alert",
+        new_callable=AsyncMock,
+        side_effect=Exception("YandexGPT timeout"),
+    )
+    @patch("cloud.notify.telegram.send_pending", new_callable=AsyncMock)
+    @patch("cloud.vision.classifier.classify_photo", new_callable=AsyncMock)
+    async def test_photo_with_threat_compose_alert_fails(
+        self,
+        mock_classify,
+        mock_send_pending,
+        mock_compose_alert,
+        mock_broadcast,
+    ):
+        """compose_alert fails but user still gets classification result."""
+        result = MagicMock()
+        result.description = "Видна рубка деревьев"
+        result.has_felling = True
+        result.has_human = False
+        result.has_fire = False
+        mock_classify.return_value = result
+        mock_send_pending.return_value = MagicMock()
+
+        update = _make_photo_update(400)
+        await drone_photo_handler(update, MagicMock())
+
+        mock_classify.assert_called_once()
+        mock_send_pending.assert_called_once()
+        mock_compose_alert.assert_called_once()
+        # User gets a response with threat info, NOT an error message
+        text = update.message.reply_text.call_args[0][0]
+        assert "угроза" in text.lower() or "chainsaw" in text.lower()
+        assert "не удалось проанализировать" not in text.lower()
+
+    @pytest.mark.asyncio
     @patch(
         "cloud.vision.classifier.classify_photo",
         new_callable=AsyncMock,

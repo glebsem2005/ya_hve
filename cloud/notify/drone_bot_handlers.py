@@ -87,49 +87,65 @@ async def drone_photo_handler(
             lon = round(random.uniform(44.60, 45.40), 6)
             confidence = 0.85
 
-            # 1. Create incident + alert rangers via Ranger bot
-            from cloud.notify.telegram import send_pending
+            # Step 1: Create incident + alert rangers via Ranger bot
+            incident = None
+            try:
+                from cloud.notify.telegram import send_pending
 
-            incident = await send_pending(
-                lat=lat,
-                lon=lon,
-                audio_class=audio_class,
-                reason=result.description,
-                confidence=confidence,
-                is_demo=True,
-            )
+                incident = await send_pending(
+                    lat=lat,
+                    lon=lon,
+                    audio_class=audio_class,
+                    reason=result.description,
+                    confidence=confidence,
+                    is_demo=True,
+                )
+            except Exception:
+                logger.exception("Step 1 failed: send_pending")
 
-            # 2. Compose alert text via YandexGPT
-            from cloud.agent.decision import compose_alert
+            # Step 2: Compose alert text via YandexGPT
+            alert = None
+            try:
+                from cloud.agent.decision import compose_alert
 
-            alert = await compose_alert(
-                audio_class=audio_class,
-                visual_description=result.description,
-                lat=lat,
-                lon=lon,
-                confidence=confidence,
-            )
+                alert = await compose_alert(
+                    audio_class=audio_class,
+                    visual_description=result.description,
+                    lat=lat,
+                    lon=lon,
+                    confidence=confidence,
+                )
+            except Exception:
+                logger.exception("Step 2 failed: compose_alert")
 
-            # 3. Store drone photo in incident (sent after ranger accepts)
-            from cloud.notify.telegram import send_confirmed
+            # Step 3: Store drone photo in incident (sent after ranger accepts)
+            if alert and incident:
+                try:
+                    from cloud.notify.telegram import send_confirmed
 
-            await send_confirmed(alert, photo_bytes, incident)
+                    await send_confirmed(alert, photo_bytes, incident)
+                except Exception:
+                    logger.exception("Step 3 failed: send_confirmed")
 
-            await broadcast(
-                {
-                    "event": "alert_sent",
-                    "audio_class": audio_class,
-                    "lat": lat,
-                    "lon": lon,
-                }
-            )
-            await broadcast({"event": "pipeline_end", "reason": "incident_created"})
+            try:
+                await broadcast(
+                    {
+                        "event": "alert_sent",
+                        "audio_class": audio_class,
+                        "lat": lat,
+                        "lon": lon,
+                    }
+                )
+                await broadcast({"event": "pipeline_end", "reason": "incident_created"})
+            except Exception:
+                logger.exception("Broadcast failed after threat pipeline")
 
             await update.message.reply_text(
-                f"*Инцидент создан*\n\n"
+                f"*Обнаружена угроза*\n\n"
                 f"Класс: {audio_class}\n"
                 f"Координаты: {lat:.4f}°N, {lon:.4f}°E\n"
-                f"Алерт отправлен инспекторам.",
+                f"Визуальный анализ: {result.description}\n"
+                f"{'Инцидент создан, алерт отправлен.' if incident else 'Не удалось создать инцидент.'}",
                 parse_mode="Markdown",
             )
         else:
