@@ -775,26 +775,36 @@
             subdomains: 'abcd', maxZoom: 19
         }).addTo(map);
 
-        /* ---- Load microphones ---- */
+        /* ---- District boundary polygon ---- */
+        fetch('/static/data/varnavino_boundary.geojson').then(function(r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function(geojson) {
+            L.geoJSON(geojson, {
+                style: { color: '#00ff41', weight: 2, fillOpacity: 0.03, fillColor: '#00ff41' }
+            }).addTo(map);
+        }).catch(function(e) {
+            logEvent('ГРАНИЦА', 'Не загружена: ' + e.message, 'low');
+        });
+
+        /* ---- Load microphones (canvas renderer) ---- */
+        var canvasRenderer = L.canvas({ padding: 0.5 });
+        var micLayer = L.layerGroup().addTo(map);
+
         fetch('/api/v1/mics').then(function(r) {
             if (!r.ok) throw new Error('HTTP ' + r.status);
             return r.json();
         }).then(function(mics) {
             var bounds = [];
             mics.forEach(function(m) {
-                var color, iconHtml;
+                var color, radius;
                 if (m.status === 'online') {
-                    color = '#00ff41';
-                    iconHtml = '<div style="width:10px;height:10px;border-radius:50%;background:#00ff41;border:1px solid rgba(0,128,32,0.5);"></div>';
+                    color = '#00ff41'; radius = 4;
                 } else if (m.status === 'offline') {
-                    color = '#444';
-                    iconHtml = '<div style="width:8px;height:8px;border-radius:50%;background:#444;border:1px solid rgba(34,34,34,0.5);"></div>';
+                    color = '#444'; radius = 3;
                 } else {
-                    color = '#ff2020';
-                    iconHtml = '<div style="width:10px;height:10px;font-size:12px;color:#ff2020;text-align:center;line-height:10px;font-weight:bold;">\u00d7</div>';
+                    color = '#ff2020'; radius = 4;
                 }
-                var icon = L.divIcon({ html: iconHtml, iconSize: [10, 10], className: '' });
-                var marker = L.marker([m.lat, m.lon], { icon: icon }).addTo(map);
                 var bat = m.battery_pct !== undefined ? m.battery_pct.toFixed(0) + '%' : '?';
                 var popupEl = document.createElement('div');
                 popupEl.style.cssText = 'font-family:monospace;font-size:11px;line-height:1.6;';
@@ -813,7 +823,13 @@
                 popupEl.appendChild(document.createTextNode('Батарея: ' + bat));
                 popupEl.appendChild(document.createElement('br'));
                 popupEl.appendChild(document.createTextNode('Участок: ' + (m.sub_district || '?')));
-                marker.bindPopup(popupEl, { className: 'dark-popup' });
+                L.circleMarker([m.lat, m.lon], {
+                    renderer: canvasRenderer,
+                    radius: radius,
+                    fillColor: color,
+                    fillOpacity: 0.8,
+                    stroke: false
+                }).bindPopup(popupEl, { className: 'dark-popup' }).addTo(micLayer);
                 bounds.push([m.lat, m.lon]);
             });
             if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });

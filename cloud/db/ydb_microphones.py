@@ -28,7 +28,7 @@ from cloud.db.microphones import (
 
 logger = logging.getLogger(__name__)
 
-GRID_SPACING_M = float(os.getenv("MIC_GRID_SPACING_M", "1000"))
+GRID_SPACING_M = float(os.getenv("MIC_GRID_SPACING_M", "1500"))
 
 
 class YDBMicrophoneRepository(MicrophoneRepository):

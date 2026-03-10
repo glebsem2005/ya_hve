@@ -3,10 +3,12 @@
 Each microphone has coordinates within Varnavino forestry district,
 zone type (forest protection category), and operational status.
 
-Microphones are placed on a diamond (rhombus) grid with ~350 m spacing
-for maximum acoustic coverage of the district.
+Microphones are placed on a diamond (rhombus) grid with 1500 m spacing
+(< R×√3 = 1732 m for full chainsaw/gunshot coverage) inside the real
+polygon boundary of the Varnavino municipal district.
 """
 
+import json
 import sqlite3
 import math
 import os
@@ -96,6 +98,45 @@ SUB_DISTRICTS = {
 LAT_MIN, LAT_MAX = 57.20, 57.83
 LON_MIN, LON_MAX = 44.32, 45.44
 
+# ---------------------------------------------------------------------------
+# Polygon boundary — loaded once from GeoJSON at import time
+# ---------------------------------------------------------------------------
+_BOUNDARY_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "data"
+    / "varnavino_boundary.geojson"
+)
+
+_BOUNDARY_POLYGON: list[tuple[float, float]] = []  # [(lon, lat), ...]
+
+if _BOUNDARY_PATH.exists():
+    with open(_BOUNDARY_PATH) as _f:
+        _geo = json.load(_f)
+    _BOUNDARY_POLYGON = [(pt[0], pt[1]) for pt in _geo["geometry"]["coordinates"][0]]
+
+
+def _point_in_polygon(lat: float, lon: float) -> bool:
+    """Ray-casting algorithm for point-in-polygon test.
+
+    Uses the module-level _BOUNDARY_POLYGON (lon, lat pairs).
+    Falls back to bbox check if polygon is not loaded.
+    """
+    poly = _BOUNDARY_POLYGON
+    if not poly:
+        return LAT_MIN <= lat <= LAT_MAX and LON_MIN <= lon <= LON_MAX
+
+    n = len(poly)
+    inside = False
+    x, y = lon, lat
+    j = n - 1
+    for i in range(n):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
 
 def _get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(_db_path())
@@ -163,7 +204,9 @@ def _build_diamond_grid(
         lon_offset = (col_step_deg / 2) if (row_idx % 2 == 1) else 0.0
         lon = LON_MIN + lon_offset
         while lon <= LON_MAX:
-            points.append((round(lat, 6), round(lon, 6)))
+            rlat, rlon = round(lat, 6), round(lon, 6)
+            if _point_in_polygon(rlat, rlon):
+                points.append((rlat, rlon))
             lon += col_step_deg
         lat += row_step_deg
         row_idx += 1
@@ -172,8 +215,8 @@ def _build_diamond_grid(
 
 
 # Default grid spacing in metres.
-# 1 km side → each mic covers ≈ 1 km radius; ≈ 3 000 nodes for Varnavino.
-GRID_SPACING_M = float(os.getenv("MIC_GRID_SPACING_M", "1000"))
+# 1500 m < R×√3 ≈ 1732 m → full chainsaw/gunshot coverage with no gaps.
+GRID_SPACING_M = float(os.getenv("MIC_GRID_SPACING_M", "1500"))
 
 
 def seed_microphones(
