@@ -363,14 +363,27 @@ async def classify_cloud(req: ClassifyRequest):
 # ---- DataLens: incidents export ----
 
 from fastapi.responses import PlainTextResponse
-from cloud.analytics.sample_incidents import get_incidents_csv_text
+from cloud.analytics.datalens import get_datalens_incidents
 
 
 @app.get("/api/v1/incidents/export", response_class=PlainTextResponse)
 async def export_incidents_csv():
     """Export incidents as CSV for DataLens integration."""
+    import csv
+    import io
+
+    rows = get_datalens_incidents()
+    if not rows:
+        return PlainTextResponse(content="", media_type="text/csv")
+
+    fieldnames = list(rows[0].keys())
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+
     return PlainTextResponse(
-        content=get_incidents_csv_text(),
+        content=buf.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=incidents.csv"},
     )

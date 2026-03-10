@@ -141,7 +141,10 @@ def update_incident(incident_id: str, **fields) -> None:
         return
 
     new_status = fields.get("status")
-    if new_status and new_status != incident.status:
+    if new_status:
+        if new_status == incident.status:
+            # Same status = no-op (protects against concurrent accept)
+            return
         allowed = VALID_TRANSITIONS.get(incident.status, set())
         if new_status not in allowed:
             return  # reject invalid transition

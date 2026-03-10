@@ -22,6 +22,7 @@ from cloud.db.incidents import (
     create_incident,
     get_incident,
     assign_chat_to_incident,
+    update_incident,
 )
 from cloud.notify.bot_handlers import (
     accept_callback,
