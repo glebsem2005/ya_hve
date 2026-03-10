@@ -183,7 +183,10 @@ def ensure_tables() -> None:
 
     Silently skips tables that are already present (catches SchemeError).
     Also runs ALTER TABLE migrations for existing incidents tables.
+    Includes retry logic and throttling for YDB rate limits.
     """
+    import time
+
     try:
         import ydb
     except ImportError:
@@ -193,17 +196,33 @@ def ensure_tables() -> None:
     try:
         pool = get_pool()
         for ddl in [DDL_RANGERS, DDL_PERMITS, DDL_INCIDENTS, DDL_MICROPHONES]:
-            try:
-                pool.retry_operation_sync(lambda s, _ddl=ddl: s.execute_scheme(_ddl))
-            except ydb.SchemeError:
-                pass  # table already exists
+            for attempt in range(3):
+                try:
+                    pool.retry_operation_sync(
+                        lambda s, _ddl=ddl: s.execute_scheme(_ddl)
+                    )
+                    break
+                except ydb.SchemeError:
+                    break  # table already exists
+                except Exception:
+                    if attempt < 2:
+                        time.sleep(2)
+            time.sleep(0.5)  # throttle between DDL ops
 
         # Migrate existing incidents table — add new columns
         for alter in _ALTER_INCIDENTS:
-            try:
-                pool.retry_operation_sync(lambda s, _alt=alter: s.execute_scheme(_alt))
-            except ydb.SchemeError:
-                pass  # column already exists
+            for attempt in range(3):
+                try:
+                    pool.retry_operation_sync(
+                        lambda s, _alt=alter: s.execute_scheme(_alt)
+                    )
+                    break
+                except ydb.SchemeError:
+                    break  # column already exists
+                except Exception:
+                    if attempt < 2:
+                        time.sleep(2)
+            time.sleep(0.5)
 
         logger.info("YDB tables ensured")
     except Exception as exc:

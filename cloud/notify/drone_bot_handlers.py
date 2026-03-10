@@ -101,6 +101,7 @@ async def drone_photo_handler(
                     reason=result.description,
                     confidence=confidence,
                     is_demo=True,
+                    broadcast=True,
                 )
             except Exception:
                 logger.exception("Step 1 failed: send_pending")

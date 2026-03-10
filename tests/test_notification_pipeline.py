@@ -257,6 +257,65 @@ class TestTelegramDelivery:
         assert mock_bot.send_message.call_count == 1  # still 1, not 2
 
     @pytest.mark.asyncio
+    async def test_broadcast_sends_to_all_active_rangers(self, mock_bot):
+        """broadcast=True sends alert to ALL active rangers, ignoring zone."""
+        _register_varnavino_ranger("Варнавино", 8501)
+        # Moscow ranger — zone doesn't cover Varnavino, but broadcast ignores zone
+        from cloud.db.rangers import add_ranger
+
+        add_ranger(
+            "Москва",
+            8502,
+            zone_lat_min=55.0,
+            zone_lat_max=56.0,
+            zone_lon_min=37.0,
+            zone_lon_max=38.0,
+        )
+
+        await send_pending(
+            MOSCOW_LAT,
+            MOSCOW_LON,
+            "chainsaw",
+            "drone",
+            confidence=0.85,
+            broadcast=True,
+        )
+
+        assert mock_bot.send_message.call_count == 2
+        sent_ids = {
+            call.kwargs["chat_id"] for call in mock_bot.send_message.call_args_list
+        }
+        assert sent_ids == {8501, 8502}
+
+    @pytest.mark.asyncio
+    async def test_broadcast_skips_inactive_rangers(self, mock_bot):
+        """broadcast=True does NOT send to inactive rangers."""
+        _register_varnavino_ranger("Активный", 8601)
+        from cloud.db.rangers import add_ranger, set_active
+
+        add_ranger(
+            "Неактивный",
+            8602,
+            zone_lat_min=55.0,
+            zone_lat_max=56.0,
+            zone_lon_min=37.0,
+            zone_lon_max=38.0,
+        )
+        set_active(8602, False)
+
+        await send_pending(
+            MOSCOW_LAT,
+            MOSCOW_LON,
+            "chainsaw",
+            "drone",
+            confidence=0.85,
+            broadcast=True,
+        )
+
+        assert mock_bot.send_message.call_count == 1
+        assert mock_bot.send_message.call_args.kwargs["chat_id"] == 8601
+
+    @pytest.mark.asyncio
     async def test_two_rangers_one_rate_limited(self, mock_bot):
         """Two rangers in zone: one is rate-limited, other still receives."""
         _register_varnavino_ranger("Быстрый", 8001)

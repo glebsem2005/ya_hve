@@ -98,6 +98,7 @@ class TestDroneBot:
         mock_classify.assert_called_once()
         mock_send_pending.assert_called_once()
         assert mock_send_pending.call_args.kwargs.get("is_demo") is True
+        assert mock_send_pending.call_args.kwargs.get("broadcast") is True
         mock_compose_alert.assert_called_once()
         mock_send_confirmed.assert_called_once()
         assert mock_send_confirmed.call_args[0][1] == b"fake-photo"

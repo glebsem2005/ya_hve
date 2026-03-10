@@ -72,6 +72,10 @@ async def lifespan(app):
         await start_drone_bot()
     except Exception:
         logger.exception("Failed to start Drone bot polling")
+    try:
+        await asyncio.to_thread(seed_microphones)
+    except Exception:
+        logger.warning("Failed to seed microphones on startup")
     asyncio.create_task(_auto_demo())
     yield
     await stop_drone_bot()
@@ -483,11 +487,7 @@ from cloud.db.microphones import (
     clear_all as mic_clear_all,
 )
 
-# Seed microphones on startup
-try:
-    seed_microphones()
-except Exception:
-    logger.warning("Failed to seed microphones on startup")
+# Microphone seeding moved to lifespan (async) to avoid blocking module import
 
 
 class MicStatusUpdate(BaseModel):

@@ -7,6 +7,7 @@ Rate limiting: each chat_id receives at most one alert per COOLDOWN_SECONDS
 to prevent notification spam from rapid detections.
 """
 
+import asyncio
 import io
 import os
 import time
@@ -89,6 +90,7 @@ async def send_pending(
     confidence: float = 0.0,
     gating_level: str | None = None,
     is_demo: bool = False,
+    broadcast: bool = False,
 ) -> Incident | None:
     """Send initial alert to all rangers covering this location.
 
@@ -103,7 +105,8 @@ async def send_pending(
     level_label = GATING_LABEL.get(level, level)
     conf_pct = f"{confidence:.0%}" if confidence else "---"
 
-    incident = create_incident(
+    incident = await asyncio.to_thread(
+        create_incident,
         audio_class=audio_class,
         lat=lat,
         lon=lon,
@@ -142,7 +145,11 @@ async def send_pending(
         ]
     )
 
-    chat_ids = _get_target_chat_ids(lat, lon)
+    if broadcast:
+        rangers = get_all_rangers()
+        chat_ids = [r.chat_id for r in rangers if r.active]
+    else:
+        chat_ids = _get_target_chat_ids(lat, lon)
     if not chat_ids:
         logger.info("No rangers cover %.4f N %.4f E — pending alert not sent", lat, lon)
         return incident
@@ -186,7 +193,8 @@ async def send_pending_to_chat(
     level_label = GATING_LABEL.get(level, level)
     conf_pct = f"{confidence:.0%}" if confidence else "---"
 
-    incident = create_incident(
+    incident = await asyncio.to_thread(
+        create_incident,
         audio_class=audio_class,
         lat=lat,
         lon=lon,

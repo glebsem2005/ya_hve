@@ -155,7 +155,7 @@ class YDBMicrophoneRepository(MicrophoneRepository):
 
         driver = get_driver()
         table_path = f"{YDB_DATABASE}/microphones"
-        batch_size = 200
+        batch_size = 500
         for start in range(0, len(rows), batch_size):
             batch = rows[start : start + batch_size]
             for attempt in range(5):
@@ -169,7 +169,7 @@ class YDBMicrophoneRepository(MicrophoneRepository):
                     break
                 except Exception as exc:
                     if attempt < 4:
-                        wait = 2**attempt
+                        wait = 2 ** (attempt + 1)
                         logger.warning(
                             "Batch %d failed (%s), retry in %ds",
                             start // batch_size,
@@ -179,7 +179,7 @@ class YDBMicrophoneRepository(MicrophoneRepository):
                         time.sleep(wait)
                     else:
                         raise
-            time.sleep(0.5)  # throttle between batches
+            time.sleep(1.0)  # throttle between batches
 
         logger.info("Seeded %d microphones via bulk_upsert", len(mics))
         return mics

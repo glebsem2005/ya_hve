@@ -36,7 +36,11 @@ class VisionResult:
 
 def _parse_result(raw: str) -> VisionResult:
     raw = raw.strip().removeprefix("```json").removesuffix("```").strip()
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Vision: failed to parse JSON: %s", raw[:200])
+        return _stub_result()
     return VisionResult(
         description=data.get("description", ""),
         has_human=data.get("has_human", False),
@@ -106,12 +110,12 @@ async def _try_yandexgpt_vision(
 
 
 def _stub_result() -> VisionResult:
-    """Safe fallback when all vision models are unavailable."""
+    """Conservative fallback: flag as potential threat so pipeline continues."""
     return VisionResult(
-        description="Не удалось выполнить визуальный анализ (сервисы недоступны).",
+        description="Визуальный анализ недоступен. Требуется ручная проверка.",
         has_human=False,
         has_fire=False,
-        has_felling=False,
+        has_felling=True,
     )
 
 
