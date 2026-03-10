@@ -86,3 +86,21 @@ def update_status(incident_id: str, status: str) -> None:
     incident = _incidents.get(incident_id)
     if incident:
         incident.status = status
+
+
+# ---------------------------------------------------------------------------
+# Backend selection: YDB (cloud) or SQLite (local fallback)
+# ---------------------------------------------------------------------------
+
+import os as _os
+
+if _os.getenv("YDB_ENDPOINT"):
+    from cloud.db.ydb_incidents import YDBIncidentRepository as _YDBRepo
+
+    _repo = _YDBRepo()
+    create_incident = _repo.create_incident
+    get_incident = _repo.get_incident
+    get_active_incident_for_chat = _repo.get_active_incident_for_chat
+    assign_chat_to_incident = _repo.assign_chat_to_incident
+    clear_chat_incident = _repo.clear_chat_incident
+    update_status = _repo.update_status

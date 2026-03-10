@@ -42,6 +42,7 @@ class YDBIncidentRepository(IncidentRepository):
         lon: float,
         confidence: float,
         gating_level: str,
+        is_demo: bool = False,
     ) -> Incident:
         from cloud.db.ydb_client import get_pool
 
@@ -83,6 +84,7 @@ class YDBIncidentRepository(IncidentRepository):
             confidence=confidence,
             gating_level=gating_level,
             status="pending",
+            is_demo=is_demo,
         )
 
     def update_status(self, incident_id: str, status: str) -> None:

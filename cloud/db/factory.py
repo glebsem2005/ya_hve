@@ -86,7 +86,7 @@ def get_microphone_repository() -> MicrophoneRepository | None:
     from ``cloud.db.microphones`` directly.
     """
     if get_backend() == "ydb":
-        # YDB microphone repo not implemented yet
-        logger.warning("YDB MicrophoneRepository not implemented, using SQLite")
-        return None
+        from cloud.db.ydb_microphones import YDBMicrophoneRepository
+
+        return YDBMicrophoneRepository()
     return None

@@ -326,5 +326,21 @@ def _row_to_mic(row: sqlite3.Row) -> Microphone:
     )
 
 
-# Auto-init on import
-init_db()
+# ---------------------------------------------------------------------------
+# Backend selection: YDB (cloud) or SQLite (local fallback)
+# ---------------------------------------------------------------------------
+
+if os.getenv("YDB_ENDPOINT"):
+    from cloud.db.ydb_microphones import YDBMicrophoneRepository as _YDBRepo
+
+    _repo = _YDBRepo()
+    init_db = _repo.init_db
+    seed_microphones = _repo.seed_microphones
+    get_all = _repo.get_all
+    get_online = _repo.get_online
+    get_by_uid = _repo.get_by_uid
+    set_status = _repo.set_status
+    set_battery = _repo.set_battery
+else:
+    # SQLite: auto-init on import
+    init_db()

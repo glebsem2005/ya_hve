@@ -126,6 +126,7 @@ class IncidentRepository(ABC):
         lon: float,
         confidence: float,
         gating_level: str,
+        is_demo: bool = False,
     ) -> Incident: ...
 
     @abstractmethod

@@ -159,5 +159,20 @@ def _row_to_permit(row: sqlite3.Row) -> Permit:
     )
 
 
-# Auto-init on import
-init_db()
+# ---------------------------------------------------------------------------
+# Backend selection: YDB (cloud) or SQLite (local fallback)
+# ---------------------------------------------------------------------------
+
+if os.getenv("YDB_ENDPOINT"):
+    from cloud.db.ydb_permits import YDBPermitRepository as _YDBRepo
+
+    _repo = _YDBRepo()
+    init_db = _repo.init_db
+    add_permit = _repo.add_permit
+    remove_permit = _repo.remove_permit
+    get_all_permits = _repo.get_all_permits
+    has_valid_permit = _repo.has_valid_permit
+    get_permits_for_location = _repo.get_permits_for_location
+else:
+    # SQLite: auto-init on import
+    init_db()

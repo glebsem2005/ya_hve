@@ -254,6 +254,23 @@ def _row_to_ranger(row: sqlite3.Row) -> Ranger:
     )
 
 
-# Auto-init on import
-init_db()
-_migrate_db()
+# ---------------------------------------------------------------------------
+# Backend selection: YDB (cloud) or SQLite (local fallback)
+# ---------------------------------------------------------------------------
+
+if os.getenv("YDB_ENDPOINT"):
+    from cloud.db.ydb_rangers import YDBRangerRepository as _YDBRepo
+
+    _repo = _YDBRepo()
+    init_db = _repo.init_db
+    add_ranger = _repo.add_ranger
+    remove_ranger = _repo.remove_ranger
+    set_active = _repo.set_active
+    update_zone = _repo.update_zone
+    get_all_rangers = _repo.get_all_rangers
+    get_rangers_for_location = _repo.get_rangers_for_location
+    get_ranger_by_chat_id = _repo.get_ranger_by_chat_id
+else:
+    # SQLite: auto-init on import
+    init_db()
+    _migrate_db()
