@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +81,46 @@ def get_pool():
         raise
 
 
+_DECLARE_RE = re.compile(r"DECLARE\s+(\$\w+)\s+AS\s+(\w+)")
+
+
+def _build_typed_params(sql: str, params: dict) -> dict:
+    """Parse DECLARE types from SQL and wrap raw values as typed tuples."""
+    try:
+        import ydb
+    except ImportError:
+        return params
+
+    ydb_type_map = {
+        "Utf8": ydb.PrimitiveType.Utf8,
+        "Int64": ydb.PrimitiveType.Int64,
+        "Uint64": ydb.PrimitiveType.Uint64,
+        "Double": ydb.PrimitiveType.Double,
+        "Bool": ydb.PrimitiveType.Bool,
+    }
+
+    declares = {name: typ for name, typ in _DECLARE_RE.findall(sql)}
+    typed = {}
+    for name, value in params.items():
+        ydb_type_name = declares.get(name)
+        ydb_type = ydb_type_map.get(ydb_type_name) if ydb_type_name else None
+        if ydb_type is not None:
+            typed[name] = (ydb_type, value)
+        else:
+            typed[name] = value
+    return typed
+
+
 def execute_query(session, sql: str, params: dict | None = None):
-    """Execute a parameterized YDB query using prepare() for type binding."""
+    """Execute a parameterized YDB query with automatic type binding.
+
+    Parses DECLARE blocks from SQL to wrap raw Python values into
+    typed tuples that the YDB SDK requires.
+    """
     if params:
+        typed = _build_typed_params(sql, params)
         prepared = session.prepare(sql)
-        return session.transaction().execute(prepared, params, commit_tx=True)
+        return session.transaction().execute(prepared, typed, commit_tx=True)
     return session.transaction().execute(sql, commit_tx=True)
 
 

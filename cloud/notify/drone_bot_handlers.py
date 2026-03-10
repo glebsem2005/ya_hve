@@ -79,6 +79,8 @@ async def drone_photo_handler(
                 audio_class = "chainsaw"
             elif result.has_fire:
                 audio_class = "fire"
+            elif result.has_human:
+                audio_class = "axe"
             else:
                 audio_class = "engine"
 
