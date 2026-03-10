@@ -179,3 +179,6 @@ class MicrophoneRepository(ABC):
 
     @abstractmethod
     def set_battery(self, mic_uid: str, battery_pct: float) -> bool: ...
+
+    @abstractmethod
+    def clear_all(self) -> int: ...

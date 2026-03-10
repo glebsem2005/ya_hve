@@ -50,51 +50,51 @@ ZONE_TYPES = [
 ZONE_WEIGHTS = [0.80, 0.05, 0.04, 0.03, 0.02, 0.02, 0.02, 0.02]
 
 SUB_DISTRICTS = {
-    "mdalskoe": {
-        "name_ru": "Мдальское",
-        "lat_range": (57.40, 57.55),
-        "lon_range": (44.60, 44.80),
+    "shudskoye": {
+        "name_ru": "Шудское",
+        "lat_range": (57.67, 57.83),
+        "lon_range": (44.32, 44.88),
     },
-    "semyonborskoe": {
-        "name_ru": "Семёнборское",
-        "lat_range": (57.35, 57.50),
-        "lon_range": (44.80, 45.00),
+    "sivkoborskoye": {
+        "name_ru": "Сивкоборское",
+        "lat_range": (57.67, 57.83),
+        "lon_range": (44.88, 45.44),
     },
-    "poplyvinskoye": {
-        "name_ru": "Поплывинское",
-        "lat_range": (57.30, 57.45),
-        "lon_range": (45.00, 45.20),
+    "lapshangskoye": {
+        "name_ru": "Лапшангское",
+        "lat_range": (57.52, 57.67),
+        "lon_range": (44.32, 44.88),
     },
-    "kamennikoskoye": {
-        "name_ru": "Каменниковское",
-        "lat_range": (57.20, 57.35),
-        "lon_range": (44.60, 44.80),
+    "kameshnikovskoye": {
+        "name_ru": "Камешниковское",
+        "lat_range": (57.52, 57.67),
+        "lon_range": (44.88, 45.44),
+    },
+    "khmelyevskoye": {
+        "name_ru": "Хмелевское",
+        "lat_range": (57.36, 57.52),
+        "lon_range": (44.32, 44.88),
     },
     "varnavinskoye": {
         "name_ru": "Варнавинское",
-        "lat_range": (57.15, 57.30),
-        "lon_range": (44.80, 45.00),
+        "lat_range": (57.36, 57.52),
+        "lon_range": (44.88, 45.44),
     },
-    "kolesnikovskoye": {
-        "name_ru": "Колесниковское",
-        "lat_range": (57.10, 57.25),
-        "lon_range": (45.00, 45.20),
-    },
-    "kameshnoye": {
-        "name_ru": "Камешное",
-        "lat_range": (57.05, 57.20),
-        "lon_range": (45.10, 45.30),
+    "kalivetskoye": {
+        "name_ru": "Каливецкое",
+        "lat_range": (57.20, 57.36),
+        "lon_range": (44.32, 44.88),
     },
     "kayskoye": {
         "name_ru": "Кайское",
-        "lat_range": (57.05, 57.20),
-        "lon_range": (45.20, 45.40),
+        "lat_range": (57.20, 57.36),
+        "lon_range": (44.88, 45.44),
     },
 }
 
 # Bounding box: Varnavino forestry district
-LAT_MIN, LAT_MAX = 57.05, 57.55
-LON_MIN, LON_MAX = 44.60, 45.40
+LAT_MIN, LAT_MAX = 57.20, 57.83
+LON_MIN, LON_MAX = 44.32, 45.44
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -341,6 +341,16 @@ if os.getenv("YDB_ENDPOINT"):
     get_by_uid = _repo.get_by_uid
     set_status = _repo.set_status
     set_battery = _repo.set_battery
+    clear_all = _repo.clear_all
 else:
     # SQLite: auto-init on import
     init_db()
+
+    def clear_all() -> int:
+        """Delete all microphones from SQLite."""
+        conn = _get_conn()
+        cur = conn.execute("DELETE FROM microphones")
+        count = cur.rowcount
+        conn.commit()
+        conn.close()
+        return count

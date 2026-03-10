@@ -61,6 +61,7 @@ class YDBMicrophoneRepository(MicrophoneRepository):
         """Populate YDB with microphones on a diamond grid.
 
         If the table is already populated, returns the existing rows.
+        Uses bulk_upsert for fast batch insertion.
         """
         if spacing_m is None:
             spacing_m = GRID_SPACING_M
@@ -82,10 +83,28 @@ class YDBMicrophoneRepository(MicrophoneRepository):
             logger.info("Microphones already seeded (%d rows), skipping", count)
             return []
 
+        import ydb
+        from cloud.db.ydb_client import get_driver, YDB_DATABASE
+
         rng = random.Random(seed)
         grid = _build_diamond_grid(spacing_m)
         mics: list[Microphone] = []
 
+        column_types = (
+            ydb.BulkUpsertColumns()
+            .add_column("id", ydb.PrimitiveType.Uint64)
+            .add_column("mic_uid", ydb.PrimitiveType.Utf8)
+            .add_column("lat", ydb.PrimitiveType.Double)
+            .add_column("lon", ydb.PrimitiveType.Double)
+            .add_column("zone_type", ydb.PrimitiveType.Utf8)
+            .add_column("sub_district", ydb.PrimitiveType.Utf8)
+            .add_column("status", ydb.PrimitiveType.Utf8)
+            .add_column("battery_pct", ydb.PrimitiveType.Double)
+            .add_column("district_slug", ydb.PrimitiveType.Utf8)
+            .add_column("installed_at", ydb.PrimitiveType.Utf8)
+        )
+
+        rows: list[dict] = []
         for i, (lat, lon) in enumerate(grid, start=1):
             mic_uid = f"MIC-{i:04d}"
             zone_type = rng.choices(ZONE_TYPES, weights=ZONE_WEIGHTS, k=1)[0]
@@ -102,53 +121,19 @@ class YDBMicrophoneRepository(MicrophoneRepository):
             battery = round(rng.uniform(20.0, 100.0), 1)
             installed_at = f"2026-{rng.randint(1, 3):02d}-{rng.randint(1, 28):02d}"
 
-            def _ins(
-                session,
-                _i=i,
-                _uid=mic_uid,
-                _lat=lat,
-                _lon=lon,
-                _zt=zone_type,
-                _sd=sub_district,
-                _st=status,
-                _bp=battery,
-                _ia=installed_at,
-            ):
-                execute_query(
-                    session,
-                    """
-                    DECLARE $id AS Uint64;
-                    DECLARE $uid AS Utf8;
-                    DECLARE $lat AS Double;
-                    DECLARE $lon AS Double;
-                    DECLARE $zt AS Utf8;
-                    DECLARE $sd AS Utf8;
-                    DECLARE $st AS Utf8;
-                    DECLARE $bp AS Double;
-                    DECLARE $ds AS Utf8;
-                    DECLARE $ia AS Utf8;
-                    UPSERT INTO microphones (id, mic_uid, lat, lon,
-                        zone_type, sub_district, status,
-                        battery_pct, district_slug, installed_at)
-                    VALUES ($id, $uid, $lat, $lon,
-                        $zt, $sd, $st,
-                        $bp, $ds, $ia)
-                    """,
-                    {
-                        "$id": _i,
-                        "$uid": _uid,
-                        "$lat": _lat,
-                        "$lon": _lon,
-                        "$zt": _zt,
-                        "$sd": _sd,
-                        "$st": _st,
-                        "$bp": _bp,
-                        "$ds": "varnavino",
-                        "$ia": _ia,
-                    },
-                )
-
-            pool.retry_operation_sync(_ins)
+            row = {
+                "id": i,
+                "mic_uid": mic_uid,
+                "lat": lat,
+                "lon": lon,
+                "zone_type": zone_type,
+                "sub_district": sub_district,
+                "status": status,
+                "battery_pct": battery,
+                "district_slug": "varnavino",
+                "installed_at": installed_at,
+            }
+            rows.append(row)
 
             mics.append(
                 Microphone(
@@ -165,28 +150,62 @@ class YDBMicrophoneRepository(MicrophoneRepository):
                 )
             )
 
+        # Bulk upsert in batches with retry and delay for YDB rate limits
+        import time
+
+        driver = get_driver()
+        table_path = f"{YDB_DATABASE}/microphones"
+        batch_size = 200
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start : start + batch_size]
+            for attempt in range(5):
+                try:
+                    driver.table_client.bulk_upsert(table_path, batch, column_types)
+                    logger.info(
+                        "Bulk upserted mics %d-%d",
+                        start + 1,
+                        start + len(batch),
+                    )
+                    break
+                except Exception as exc:
+                    if attempt < 4:
+                        wait = 2**attempt
+                        logger.warning(
+                            "Batch %d failed (%s), retry in %ds",
+                            start // batch_size,
+                            exc,
+                            wait,
+                        )
+                        time.sleep(wait)
+                    else:
+                        raise
+            time.sleep(0.5)  # throttle between batches
+
+        logger.info("Seeded %d microphones via bulk_upsert", len(mics))
         return mics
 
     # ------------------------------------------------------------------
     # read
     # ------------------------------------------------------------------
 
-    def get_all(self, limit: int = 1000) -> list[Microphone]:
-        from cloud.db.ydb_client import get_pool
+    def get_all(self, limit: int = 10000) -> list[Microphone]:
+        from cloud.db.ydb_client import get_driver, YDB_DATABASE
 
-        pool = get_pool()
+        driver = get_driver()
+        table_path = f"{YDB_DATABASE}/microphones"
 
-        def _q(session):
-            from cloud.db.ydb_client import execute_query
+        # Use scan query to avoid truncation on large result sets
+        mics: list[Microphone] = []
+        it = driver.table_client.scan_query(f"SELECT * FROM microphones LIMIT {limit}")
+        while True:
+            try:
+                result = next(it)
+                for row in result.result_set.rows:
+                    mics.append(self._row_to_mic(row))
+            except StopIteration:
+                break
 
-            result = execute_query(
-                session,
-                "DECLARE $lim AS Uint64; SELECT * FROM microphones LIMIT $lim",
-                {"$lim": limit},
-            )
-            return [self._row_to_mic(row) for row in result[0].rows]
-
-        return pool.retry_operation_sync(_q)
+        return mics
 
     def get_online(self, limit: int = 100) -> list[Microphone]:
         from cloud.db.ydb_client import get_pool
@@ -258,6 +277,34 @@ class YDBMicrophoneRepository(MicrophoneRepository):
 
         pool.retry_operation_sync(_upd)
         return True
+
+    # ------------------------------------------------------------------
+    # delete
+    # ------------------------------------------------------------------
+
+    def clear_all(self) -> int:
+        """Delete all rows from the microphones table."""
+        from cloud.db.ydb_client import get_pool
+
+        pool = get_pool()
+
+        def _count(session):
+            result = session.transaction().execute(
+                "SELECT COUNT(*) AS cnt FROM microphones",
+                commit_tx=True,
+            )
+            return result[0].rows[0].cnt
+
+        count = pool.retry_operation_sync(_count)
+
+        def _delete(session):
+            session.transaction().execute(
+                "DELETE FROM microphones",
+                commit_tx=True,
+            )
+
+        pool.retry_operation_sync(_delete)
+        return count
 
     # ------------------------------------------------------------------
     # helpers

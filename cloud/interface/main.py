@@ -480,6 +480,7 @@ from cloud.db.microphones import (
     get_by_uid as mic_get_by_uid,
     set_status as mic_set_status,
     set_battery as mic_set_battery,
+    clear_all as mic_clear_all,
 )
 
 # Seed microphones on startup
@@ -524,6 +525,44 @@ async def list_mics_online():
         {"mic_uid": m.mic_uid, "lat": m.lat, "lon": m.lon, "zone_type": m.zone_type}
         for m in mics
     ]
+
+
+_reseed_status: dict = {"running": False, "deleted": 0, "created": 0}
+
+
+@app.post("/api/v1/mics/reseed")
+async def reseed_mics():
+    """Delete all microphones and re-seed from updated grid parameters.
+
+    Runs seeding in a background thread to avoid nginx timeout.
+    Poll GET /api/v1/mics/reseed/status for progress.
+    """
+    if _reseed_status["running"]:
+        return {"status": "already_running"}
+
+    import concurrent.futures
+
+    def _do_reseed():
+        _reseed_status["running"] = True
+        try:
+            deleted = mic_clear_all()
+            _reseed_status["deleted"] = deleted
+            logger.info("Cleared %d microphones, re-seeding...", deleted)
+            mics = seed_microphones()
+            _reseed_status["created"] = len(mics)
+            logger.info("Re-seeded %d microphones", len(mics))
+        finally:
+            _reseed_status["running"] = False
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    executor.submit(_do_reseed)
+    return {"status": "started", "message": "Reseed running in background"}
+
+
+@app.get("/api/v1/mics/reseed/status")
+async def reseed_status():
+    """Check reseed progress."""
+    return _reseed_status
 
 
 @app.patch("/api/v1/mics/{mic_uid}/status")
