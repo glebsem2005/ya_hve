@@ -18,6 +18,8 @@ _mock_main_module.broadcast = AsyncMock()
 sys.modules["cloud.interface.main"] = _mock_main_module
 cloud.interface.main = _mock_main_module
 
+from telegram.ext import MessageHandler, filters
+
 from cloud.notify.drone_bot_handlers import (
     drone_start,
     drone_photo_handler,
@@ -453,3 +455,15 @@ class TestDroneBot:
         update.message.reply_text.assert_called_once()
         text = update.message.reply_text.call_args[0][0]
         assert "фото" in text.lower()
+
+    def test_get_handlers_includes_text_handler(self):
+        """get_drone_handlers must include a TEXT message handler."""
+        from cloud.notify.drone_bot_handlers import get_drone_handlers
+
+        handlers = get_drone_handlers()
+        text_handlers = [
+            h
+            for h in handlers
+            if isinstance(h, MessageHandler) and h.filters != filters.PHOTO
+        ]
+        assert len(text_handlers) >= 1, "No TEXT handler in get_drone_handlers()"

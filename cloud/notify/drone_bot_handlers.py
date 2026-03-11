@@ -209,4 +209,5 @@ def get_drone_handlers() -> list:
     return [
         CommandHandler("start", drone_start),
         MessageHandler(filters.PHOTO, drone_photo_handler),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, drone_text_handler),
     ]
