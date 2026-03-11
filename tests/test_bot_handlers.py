@@ -28,10 +28,17 @@ from cloud.notify.bot_handlers import (
     status,
     stop,
     text_handler,
+    help_cmd,
+    cancel_cmd,
+    rangers_cmd,
+    confirm_reg_callback,
+    snooze_callback,
     _registration_state,
     _REG_STEP_NAME,
     _REG_STEP_BADGE,
+    _REG_STEP_CONFIRM,
     _REG_TTL,
+    ADMIN_CHAT_IDS,
 )
 from cloud.notify.districts import DISTRICTS
 
@@ -268,7 +275,7 @@ class TestRegistrationFlow:
         assert "табельный" in text.lower()
 
     @pytest.mark.asyncio
-    async def test_badge_entered_completes_registration(self):
+    async def test_badge_entered_shows_confirmation(self):
         _registration_state[1400] = {
             "step": _REG_STEP_BADGE,
             "district_slug": "varnavino",
@@ -278,13 +285,49 @@ class TestRegistrationFlow:
         update = _make_update(chat_id=1400, text="12345")
         await text_handler(update, MagicMock())
 
-        ranger = get_ranger_by_chat_id(1400)
+        # Not yet registered — awaiting confirmation
+        assert get_ranger_by_chat_id(1400) is None
+        assert _registration_state[1400]["step"] == _REG_STEP_CONFIRM
+        assert _registration_state[1400]["badge"] == "12345"
+        text = update.message.reply_text.call_args[0][0]
+        assert "проверьте данные" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_confirm_yes_completes_registration(self):
+        _registration_state[1401] = {
+            "step": _REG_STEP_CONFIRM,
+            "district_slug": "varnavino",
+            "name": "Петров Пётр Петрович",
+            "badge": "12345",
+            "started_at": time.time(),
+        }
+        update = _make_callback_update(chat_id=1401, data="confirm_reg:yes")
+        await confirm_reg_callback(update, MagicMock())
+
+        ranger = get_ranger_by_chat_id(1401)
         assert ranger is not None
         assert ranger.name == "Петров Пётр Петрович"
         assert ranger.badge_number == "12345"
-        assert 1400 not in _registration_state
-        text = update.message.reply_text.call_args[0][0]
+        assert 1401 not in _registration_state
+        text = update.callback_query.edit_message_text.call_args[0][0]
         assert "зарегистрированы" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_confirm_no_restarts_registration(self):
+        _registration_state[1402] = {
+            "step": _REG_STEP_CONFIRM,
+            "district_slug": "varnavino",
+            "name": "Петров Пётр Петрович",
+            "badge": "12345",
+            "started_at": time.time(),
+        }
+        update = _make_callback_update(chat_id=1402, data="confirm_reg:no")
+        await confirm_reg_callback(update, MagicMock())
+
+        assert get_ranger_by_chat_id(1402) is None
+        assert 1402 not in _registration_state
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "отменена" in text.lower()
 
     @pytest.mark.asyncio
     async def test_short_name_rejected(self):
@@ -348,3 +391,149 @@ class TestRegistrationFlow:
         text = update.message.reply_text.call_args[0][0]
         assert "99887" in text
         assert "Козлов" in text
+
+
+class TestHelpCommand:
+    @pytest.mark.asyncio
+    async def test_help_shows_commands(self):
+        update = _make_update(chat_id=2000)
+        await help_cmd(update, MagicMock())
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "/start" in text
+        assert "/help" in text
+        assert "/cancel" in text
+        assert "/rangers" in text
+
+
+class TestCancelCommand:
+    @pytest.mark.asyncio
+    async def test_cancel_active_registration(self):
+        _registration_state[2100] = {
+            "step": _REG_STEP_NAME,
+            "district_slug": "varnavino",
+            "started_at": time.time(),
+        }
+        update = _make_update(chat_id=2100)
+        await cancel_cmd(update, MagicMock())
+
+        assert 2100 not in _registration_state
+        text = update.message.reply_text.call_args[0][0]
+        assert "отменена" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_cancel_no_registration(self):
+        update = _make_update(chat_id=2200)
+        await cancel_cmd(update, MagicMock())
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "нет активной" in text.lower()
+
+
+class TestRangersCommand:
+    @pytest.mark.asyncio
+    async def test_rangers_lists_all(self):
+        add_ranger(
+            "Иванов Иван",
+            chat_id=2300,
+            badge_number="001",
+            zone_lat_min=57.0,
+            zone_lat_max=58.0,
+            zone_lon_min=44.0,
+            zone_lon_max=46.0,
+        )
+        add_ranger(
+            "Петров Пётр",
+            chat_id=2301,
+            badge_number="002",
+            zone_lat_min=57.0,
+            zone_lat_max=58.0,
+            zone_lon_min=44.0,
+            zone_lon_max=46.0,
+        )
+        # No ADMIN_CHAT_IDS set — anyone can use it
+        ADMIN_CHAT_IDS.clear()
+        update = _make_update(chat_id=2300)
+        await rangers_cmd(update, MagicMock())
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "Иванов" in text
+        assert "Петров" in text
+        assert "2" in text  # count
+
+    @pytest.mark.asyncio
+    async def test_rangers_admin_restricted(self):
+        ADMIN_CHAT_IDS.add(9999)
+        update = _make_update(chat_id=2400)
+        await rangers_cmd(update, MagicMock())
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "администратор" in text.lower()
+        ADMIN_CHAT_IDS.discard(9999)
+
+    @pytest.mark.asyncio
+    async def test_rangers_empty(self):
+        ADMIN_CHAT_IDS.clear()
+        update = _make_update(chat_id=2500)
+        await rangers_cmd(update, MagicMock())
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "нет зарегистрированных" in text.lower()
+
+
+class TestSnoozeCallback:
+    @pytest.mark.asyncio
+    async def test_snooze_edits_message(self):
+        from cloud.db.incidents import create_incident
+
+        incident = create_incident(
+            audio_class="chainsaw",
+            lat=57.3,
+            lon=44.8,
+            confidence=0.85,
+            gating_level="alert",
+        )
+        update = _make_callback_update(chat_id=2600, data=f"snooze:{incident.id}")
+        ctx = MagicMock()
+        ctx.job_queue = MagicMock()
+        await snooze_callback(update, ctx)
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "отложено" in text.lower()
+
+
+class TestRegistrationProgress:
+    @pytest.mark.asyncio
+    async def test_step1_shows_progress(self):
+        update = _make_callback_update(chat_id=2700, data="district:varnavino")
+        await district_chosen(update, MagicMock())
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "шаг 1 из 3" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_step2_shows_progress(self):
+        _registration_state[2800] = {
+            "step": _REG_STEP_NAME,
+            "district_slug": "varnavino",
+            "started_at": time.time(),
+        }
+        update = _make_update(chat_id=2800, text="Иванов Иван Иванович")
+        await text_handler(update, MagicMock())
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "шаг 2 из 3" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_step3_shows_progress(self):
+        _registration_state[2900] = {
+            "step": _REG_STEP_BADGE,
+            "district_slug": "varnavino",
+            "name": "Иванов Иван Иванович",
+            "started_at": time.time(),
+        }
+        update = _make_update(chat_id=2900, text="12345")
+        await text_handler(update, MagicMock())
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "шаг 3 из 3" in text.lower()

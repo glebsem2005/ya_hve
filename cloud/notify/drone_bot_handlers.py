@@ -17,6 +17,7 @@ import random
 import re
 
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.ext import (
     CommandHandler,
@@ -27,12 +28,12 @@ from telegram.ext import (
 
 logger = logging.getLogger(__name__)
 
-_MD_ESCAPE_RE = re.compile(r"([_*\[\]`~>#+\-=|{}.!\\])")
+_MD_V1_ESCAPE_RE = re.compile(r"([_*`\[])")
 
 
 def escape_markdown(text: str) -> str:
-    """Escape Telegram Markdown special characters in text."""
-    return _MD_ESCAPE_RE.sub(r"\\\1", text)
+    """Escape Telegram Markdown v1 special characters."""
+    return _MD_V1_ESCAPE_RE.sub(r"\\\1", text)
 
 
 try:
@@ -168,7 +169,7 @@ async def drone_photo_handler(
                 f"{'Инцидент создан, алерт отправлен.' if incident else 'Не удалось создать инцидент.'}"
             )
             try:
-                await update.message.reply_text(reply, parse_mode="Markdown")
+                await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
             except BadRequest:
                 logger.warning(
                     "Markdown parse failed in threat reply, falling back to plain text"
@@ -180,7 +181,7 @@ async def drone_photo_handler(
             desc_escaped = escape_markdown(result.description)
             reply = f"*Анализ фото:*\n{desc_escaped}\n\nНарушений не обнаружено."
             try:
-                await update.message.reply_text(reply, parse_mode="Markdown")
+                await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
             except BadRequest:
                 logger.warning(
                     "Markdown parse failed in no-threat reply, falling back to plain text"

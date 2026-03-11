@@ -159,6 +159,45 @@ def get_all_incidents() -> list[Incident]:
     return sorted(_incidents.values(), key=lambda i: i.created_at, reverse=True)
 
 
+def clear_all_incidents() -> None:
+    """Clear all incidents and chat mappings (for tests)."""
+    _incidents.clear()
+    _chat_to_incident.clear()
+
+
+def get_stale_incidents(
+    pending_max_age: float = 1800, accepted_max_age: float = 3600
+) -> list[Incident]:
+    """Find stale incidents: pending > pending_max_age, accepted > accepted_max_age."""
+    now = time.time()
+    stale = []
+    for incident in _incidents.values():
+        if incident.status == "pending":
+            if now - incident.created_at > pending_max_age:
+                stale.append(incident)
+        elif incident.status == "accepted" and incident.accepted_at:
+            if now - incident.accepted_at > accepted_max_age:
+                stale.append(incident)
+    return stale
+
+
+def get_recent_nearby_incident(
+    lat: float, lon: float, radius_m: float = 500, max_age_s: float = 300
+) -> Incident | None:
+    """Find a recent pending/accepted incident near the given coordinates."""
+    from cloud.db.rangers import _haversine
+
+    now = time.time()
+    for incident in _incidents.values():
+        if incident.status not in ("pending", "accepted"):
+            continue
+        if now - incident.created_at > max_age_s:
+            continue
+        if _haversine(lat, lon, incident.lat, incident.lon) <= radius_m:
+            return incident
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Backend selection: YDB (cloud) or in-memory (default)
 # ---------------------------------------------------------------------------
@@ -177,3 +216,7 @@ if _os.getenv("YDB_ENDPOINT"):
     update_status = _repo.update_status
     update_incident = _repo.update_incident
     get_all_incidents = _repo.get_all_incidents
+    get_stale_incidents = getattr(_repo, "get_stale_incidents", get_stale_incidents)
+    get_recent_nearby_incident = getattr(
+        _repo, "get_recent_nearby_incident", get_recent_nearby_incident
+    )

@@ -12,6 +12,7 @@ import io
 import os
 import time
 import logging
+from datetime import datetime, timezone, timedelta
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -23,14 +24,27 @@ from cloud.db.rangers import (
     Ranger,
 )
 from cloud.db.rangers import _haversine as haversine_m
-from cloud.db.incidents import Incident, create_incident
+from cloud.db.incidents import Incident, create_incident, get_recent_nearby_incident
 
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# Minimum seconds between alerts to the same chat_id
+MOSCOW_TZ = timezone(timedelta(hours=3))
+
+# Minimum seconds between alerts to the same chat_id (default fallback)
 COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", 300))
+
+# Severity-aware cooldowns (seconds)
+SEVERITY_COOLDOWNS: dict[str, int] = {
+    "alert": 60,
+    "verify": 300,
+    "log": 600,
+}
+
+# Quiet hours (Moscow time)
+QUIET_HOURS_START = int(os.getenv("QUIET_HOURS_START", 22))
+QUIET_HOURS_END = int(os.getenv("QUIET_HOURS_END", 6))
 
 # chat_id → timestamp of last sent alert
 _last_sent: dict[int, float] = {}
@@ -58,10 +72,24 @@ PRIORITY_LABEL: dict[str, str] = {
 }
 
 
-def _is_rate_limited(chat_id: int) -> bool:
-    """Check if this chat_id was alerted recently."""
+def _is_rate_limited(chat_id: int, gating_level: str = "verify") -> bool:
+    """Check if this chat_id was alerted recently (severity-aware)."""
     last = _last_sent.get(chat_id, 0.0)
-    return (time.monotonic() - last) < COOLDOWN_SECONDS
+    cooldown = SEVERITY_COOLDOWNS.get(gating_level, COOLDOWN_SECONDS)
+    return (time.monotonic() - last) < cooldown
+
+
+def _is_quiet_hours(gating_level: str = "verify") -> bool:
+    """Check if current Moscow time is within quiet hours.
+
+    Critical alerts (gating_level='alert') bypass quiet hours.
+    """
+    if gating_level == "alert":
+        return False
+    hour = datetime.now(tz=MOSCOW_TZ).hour
+    if QUIET_HOURS_START > QUIET_HOURS_END:
+        return hour >= QUIET_HOURS_START or hour < QUIET_HOURS_END
+    return QUIET_HOURS_START <= hour < QUIET_HOURS_END
 
 
 def _mark_sent(chat_id: int) -> None:
@@ -97,13 +125,33 @@ async def send_pending(
     Creates an Incident and returns it. Drone photo is NOT sent yet —
     it will be sent after the ranger accepts the call.
     """
+    level = gating_level or _gating_level(confidence)
+
+    # Spatial deduplication: skip if a recent nearby incident exists
+    existing = get_recent_nearby_incident(lat, lon, radius_m=500, max_age_s=300)
+    if existing:
+        logger.info(
+            "Dedup: incident %s already covers %.4f,%.4f — skipping",
+            existing.id,
+            lat,
+            lon,
+        )
+        return existing
+
+    # Quiet hours: suppress non-critical alerts
+    if _is_quiet_hours(level):
+        logger.info(
+            "Quiet hours: suppressing %s-level alert at %.4f,%.4f", level, lat, lon
+        )
+        return None
+
     bot = Bot(token=BOT_TOKEN)
     maps_url = f"https://maps.yandex.ru/?pt={lon},{lat}&z=15"
 
     class_ru = CLASS_NAME_RU.get(audio_class, audio_class)
-    level = gating_level or _gating_level(confidence)
     level_label = GATING_LABEL.get(level, level)
     conf_pct = f"{confidence:.0%}" if confidence else "---"
+    timestamp = datetime.now(tz=MOSCOW_TZ).strftime("%H:%M:%S")
 
     incident = await asyncio.to_thread(
         create_incident,
@@ -118,6 +166,7 @@ async def send_pending(
     text = (
         f"*АЛЕРТ: {class_ru}*\n"
         f"━━━━━━━━━━━━━━━━\n"
+        f"Время: {timestamp} МСК\n"
         f"Координаты: {lat:.4f} N, {lon:.4f} E\n"
         f"Уверенность: {conf_pct}\n"
         f"Уровень: {level_label}\n\n"
@@ -142,6 +191,12 @@ async def send_pending(
                     callback_data=f"accept:{incident.id}",
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    "Отложить 15 мин",
+                    callback_data=f"snooze:{incident.id}",
+                ),
+            ],
         ]
     )
 
@@ -155,7 +210,7 @@ async def send_pending(
         return incident
 
     for chat_id in chat_ids:
-        if _is_rate_limited(chat_id):
+        if _is_rate_limited(chat_id, level):
             logger.info("Rate-limited: skipping pending alert for chat_id=%s", chat_id)
             continue
         _mark_sent(chat_id)
@@ -192,6 +247,7 @@ async def send_pending_to_chat(
     level = gating_level or _gating_level(confidence)
     level_label = GATING_LABEL.get(level, level)
     conf_pct = f"{confidence:.0%}" if confidence else "---"
+    timestamp = datetime.now(tz=MOSCOW_TZ).strftime("%H:%M:%S")
 
     incident = await asyncio.to_thread(
         create_incident,
@@ -206,6 +262,7 @@ async def send_pending_to_chat(
     text = (
         f"*АЛЕРТ: {class_ru}*\n"
         f"━━━━━━━━━━━━━━━━\n"
+        f"Время: {timestamp} МСК\n"
         f"Координаты: {lat:.4f} N, {lon:.4f} E\n"
         f"Уверенность: {conf_pct}\n"
         f"Уровень: {level_label}\n\n"
@@ -219,6 +276,12 @@ async def send_pending_to_chat(
                 InlineKeyboardButton(
                     "Принять вызов",
                     callback_data=f"accept:{incident.id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "Отложить 15 мин",
+                    callback_data=f"snooze:{incident.id}",
                 ),
             ],
         ]
@@ -283,7 +346,7 @@ async def send_confirmed(
         return
 
     for chat_id in chat_ids:
-        if _is_rate_limited(chat_id):
+        if _is_rate_limited(chat_id, "alert"):
             logger.info(
                 "Rate-limited: skipping confirmed alert for chat_id=%s", chat_id
             )

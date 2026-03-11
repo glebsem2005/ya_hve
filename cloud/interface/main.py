@@ -15,7 +15,32 @@ from cloud.agent.protocol_pdf import generate_protocol
 from cloud.agent.rag_agent import query_legal_articles
 from cloud.db.incidents import get_incident, update_incident
 
+import httpx
+from edge.audio.classifier import AudioResult
+
 logger = logging.getLogger(__name__)
+
+EDGE_CLASSIFY_URL = os.getenv("EDGE_CLASSIFY_URL", "http://edge:8001/api/v1/classify")
+
+
+def _classify_via_edge(audio_path: str) -> AudioResult:
+    """Classify audio by calling edge HTTP API instead of importing TF."""
+    try:
+        with open(audio_path, "rb") as f:
+            resp = httpx.post(
+                EDGE_CLASSIFY_URL,
+                files={"file": ("audio.wav", f, "audio/wav")},
+                timeout=30.0,
+            )
+        data = resp.json()
+        return AudioResult(
+            label=data.get("label", "unknown"),
+            confidence=data.get("confidence", 0.0),
+            raw_scores=data.get("raw_scores", {}),
+        )
+    except Exception:
+        logger.exception("Edge classify API call failed")
+        return AudioResult(label="unknown", confidence=0.0, raw_scores={})
 
 
 async def _auto_demo():
@@ -804,10 +829,9 @@ async def live_audio(file: UploadFile):
             capture_output=True,
             timeout=10,
         )
-        from edge.audio.classifier import classify
         from cloud.notify.telegram import send_pending
 
-        result = classify(wav_path)
+        result = _classify_via_edge(wav_path)
         await broadcast(
             {
                 "event": "audio_classified",
@@ -889,7 +913,6 @@ def _import_demo_deps():
     from simulator.audio.mic_stream import MicSimulator
     from simulator.drone.drone_stream import DroneSimulator
     from simulator.lora.socket_relay import LoraRelay
-    from edge.audio.classifier import classify
     from edge.audio.onset import detect_onset as detect_onset_fn
     from edge.tdoa.triangulate import triangulate, MicPosition
     from edge.decision.decider import decide
@@ -901,7 +924,7 @@ def _import_demo_deps():
 
     return {
         "MicSimulator": MicSimulator,
-        "classify": classify,
+        "classify": _classify_via_edge,
         "detect_onset": detect_onset_fn,
         "triangulate": triangulate,
         "MicPosition": MicPosition,
@@ -1023,8 +1046,6 @@ async def _run_demo(
             "engine",
             "axe",
         ):
-            from edge.audio.classifier import AudioResult
-
             audio_result = AudioResult(
                 label=scenario,
                 confidence=0.85,

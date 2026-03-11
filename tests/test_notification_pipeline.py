@@ -38,7 +38,9 @@ from cloud.notify.telegram import (
     _mark_sent,
     _last_sent,
     COOLDOWN_SECONDS,
+    SEVERITY_COOLDOWNS,
 )
+from cloud.db.incidents import clear_all_incidents
 from cloud.notify.districts import DISTRICTS
 from edge.audio.classifier import AudioResult
 from edge.audio.onset import OnsetDetector
@@ -69,6 +71,13 @@ def _fresh_state(tmp_path, monkeypatch):
     init_rangers_db()
     init_permits_db()
     _last_sent.clear()
+    clear_all_incidents()
+    # Disable quiet hours and dedup in tests
+    monkeypatch.setattr("cloud.notify.telegram.QUIET_HOURS_START", 0)
+    monkeypatch.setattr("cloud.notify.telegram.QUIET_HOURS_END", 0)
+    monkeypatch.setattr(
+        "cloud.notify.telegram.get_recent_nearby_incident", lambda *a, **kw: None
+    )
 
 
 def _register_varnavino_ranger(name: str, chat_id: int):
@@ -321,15 +330,30 @@ class TestTelegramDelivery:
         _register_varnavino_ranger("Быстрый", 8001)
         _register_varnavino_ranger("Новый", 8002)
 
-        # First alert -> both receive
-        await send_pending(VARNAVINO_LAT, VARNAVINO_LON, "chainsaw", "x")
+        # Use explicit gating_level to control cooldown duration
+        await send_pending(
+            VARNAVINO_LAT,
+            VARNAVINO_LON,
+            "chainsaw",
+            "x",
+            confidence=0.85,
+            gating_level="alert",
+        )
         assert mock_bot.send_message.call_count == 2
 
-        # Reset rate limit for ranger 8002 only
-        _last_sent[8002] = time.monotonic() - COOLDOWN_SECONDS - 1
+        # Reset rate limit for ranger 8002 only (alert cooldown = 60s)
+        alert_cooldown = SEVERITY_COOLDOWNS["alert"]
+        _last_sent[8002] = time.monotonic() - alert_cooldown - 1
 
         # Second alert -> only 8002 receives (8001 still rate-limited)
-        await send_pending(VARNAVINO_LAT, VARNAVINO_LON, "gunshot", "y")
+        await send_pending(
+            VARNAVINO_LAT + 0.01,
+            VARNAVINO_LON,
+            "gunshot",
+            "y",
+            confidence=0.85,
+            gating_level="alert",
+        )
         assert mock_bot.send_message.call_count == 3  # 2 + 1
 
 

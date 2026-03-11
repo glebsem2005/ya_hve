@@ -6,14 +6,31 @@ Uses the same polling approach as the Ranger bot (bot_app.py).
 
 import os
 import logging
+import traceback
 
-from telegram.ext import Application
+from telegram.ext import Application, ContextTypes
 
 from cloud.notify.drone_bot_handlers import get_drone_handlers
 
 logger = logging.getLogger(__name__)
 
 _application: Application | None = None
+
+
+async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Global error handler — log traceback, notify user."""
+    logger.error(
+        "Drone bot exception:\n%s",
+        "".join(traceback.format_exception(context.error)),
+    )
+    if update and hasattr(update, "effective_chat") and update.effective_chat:
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Произошла ошибка. Попробуйте позже.",
+            )
+        except Exception:
+            pass
 
 
 def build_drone_application() -> Application:
@@ -24,6 +41,7 @@ def build_drone_application() -> Application:
     app = Application.builder().token(token).build()
     for handler in get_drone_handlers():
         app.add_handler(handler)
+    app.add_error_handler(_error_handler)
     return app
 
 

@@ -12,10 +12,12 @@ This replaces the old 30-second polling loop with event-driven detection.
 import asyncio
 import logging
 import os
+import threading
 import numpy as np
 import soundfile as sf
 import tempfile
 
+import uvicorn
 from edge.audio.classifier import classify
 from edge.audio.ndsi import compute_ndsi
 from edge.audio.onset import OnsetDetector, FRAME_SIZE, LONG_TERM_FRAMES
@@ -397,5 +399,22 @@ async def run():
         return
 
 
+def _start_classify_api():
+    """Start the classify HTTP API on port 8001 in a background thread."""
+    from edge.classify_api import app as classify_app
+
+    config = uvicorn.Config(
+        classify_app,
+        host="0.0.0.0",
+        port=int(os.getenv("EDGE_CLASSIFY_PORT", "8001")),
+        log_level="info",
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    logger.info("Classify API started on port %s", config.port)
+
+
 if __name__ == "__main__":
+    _start_classify_api()
     asyncio.run(run())

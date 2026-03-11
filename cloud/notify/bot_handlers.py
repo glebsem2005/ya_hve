@@ -20,6 +20,7 @@ Message handlers:
 import base64
 import logging
 import math
+import os
 import random
 import time
 
@@ -35,6 +36,7 @@ from telegram.ext import (
 from cloud.db.rangers import (
     add_ranger,
     get_ranger_by_chat_id,
+    get_all_rangers,
     set_active,
     update_position,
 )
@@ -59,11 +61,18 @@ from cloud.notify.telegram import (
 
 logger = logging.getLogger(__name__)
 
+# Admin chat IDs (comma-separated env var)
+ADMIN_CHAT_IDS: set[int] = set()
+_admin_env = os.getenv("ADMIN_CHAT_IDS", "")
+if _admin_env:
+    ADMIN_CHAT_IDS = {int(x.strip()) for x in _admin_env.split(",") if x.strip()}
+
 # ---------- Registration state (manual, no ConversationHandler) ----------
 
 _registration_state: dict[int, dict] = {}
 _REG_STEP_NAME = "awaiting_name"
 _REG_STEP_BADGE = "awaiting_badge"
+_REG_STEP_CONFIRM = "awaiting_confirm"
 _REG_TTL = 1800  # 30 minutes
 
 
@@ -138,7 +147,8 @@ async def district_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "started_at": time.time(),
     }
     await query.edit_message_text(
-        f"Лесничество: {district.name_ru}\n\nВведите ваше ФИО (фамилия, имя, отчество):"
+        f"Лесничество: {district.name_ru}\n\n"
+        "Шаг 1 из 3: Введите ваше ФИО (фамилия, имя, отчество):"
     )
 
 
@@ -258,13 +268,27 @@ async def accept_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     maps_url = f"https://maps.yandex.ru/?pt={incident.lon},{incident.lat}&z=15"
 
+    logger.info(
+        "AUDIT chat_id=%s action=accept incident=%s result=ok",
+        chat_id,
+        incident_id,
+    )
+
     # Confirm to the accepting ranger
     await query.edit_message_text(f"Вызов принят. Выезжайте на точку:\n{maps_url}")
 
-    # Edit alert for OTHER rangers (remove buttons, show who accepted)
+    # Send native location pin
     from telegram import Bot
 
     bot = Bot(token=BOT_TOKEN)
+    try:
+        await bot.send_location(
+            chat_id=chat_id, latitude=incident.lat, longitude=incident.lon
+        )
+    except Exception as e:
+        logger.warning("Failed to send location to %s: %s", chat_id, e)
+
+    # Edit alert for OTHER rangers (remove buttons, show who accepted)
     for other_chat_id, msg_id in incident.alert_message_ids.items():
         if other_chat_id == chat_id:
             continue
@@ -359,9 +383,19 @@ async def verdict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         if incident:
             incident.status = "false_alarm"
         clear_chat_incident(chat_id)
+        logger.info(
+            "AUDIT chat_id=%s action=verdict:false incident=%s result=false_alarm",
+            chat_id,
+            incident_id,
+        )
         await query.edit_message_text("Принято, инцидент закрыт. Спасибо за проверку.")
 
     elif verdict_type == "confirmed":
+        logger.info(
+            "AUDIT chat_id=%s action=verdict:confirmed incident=%s result=confirmed",
+            chat_id,
+            incident_id,
+        )
         # Stay on_site, wait for evidence
         await query.edit_message_text("Нарушение зафиксировано.")
         await send_evidence_request(chat_id)
@@ -397,15 +431,27 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         incident.ranger_report_raw = text
         update_incident(incident.id, ranger_report_raw=text)
+        logger.info(
+            "AUDIT chat_id=%s action=evidence_voice incident=%s result=ok",
+            chat_id,
+            incident.id,
+        )
         await update.message.reply_text(f'Текст сохранен:\n"{text}"')
 
         # If photo already collected, generate protocol
         if incident.ranger_photo_b64:
             await _generate_and_send_protocol(chat_id, incident)
 
+    except ConnectionError:
+        logger.exception("Voice handler: STT connection failed")
+        await update.message.reply_text(
+            "Сервис распознавания речи недоступен. Опишите ситуацию текстом."
+        )
     except Exception as e:
-        logger.exception("Voice handler failed")
-        await update.message.reply_text("Ошибка обработки голосового сообщения.")
+        logger.exception("Voice handler failed: %s", type(e).__name__)
+        await update.message.reply_text(
+            "Ошибка обработки голосового сообщения. Попробуйте ещё раз или опишите текстом."
+        )
 
 
 # ---------- Photo handler ----------
@@ -434,6 +480,11 @@ async def handle_inspector_photo(
                 incident.ranger_report_raw = update.message.caption
                 update_incident(incident.id, ranger_report_raw=update.message.caption)
 
+            logger.info(
+                "AUDIT chat_id=%s action=evidence_photo incident=%s result=ok",
+                chat_id,
+                incident.id,
+            )
             await update.message.reply_text("Фото сохранено.")
 
             if incident.ranger_report_raw:
@@ -442,9 +493,16 @@ async def handle_inspector_photo(
                 await update.message.reply_text(
                     "Опишите нарушение (текстом или голосовым сообщением)."
                 )
+        except ConnectionError:
+            logger.exception("Evidence photo: download failed")
+            await update.message.reply_text(
+                "Не удалось скачать фото. Проверьте соединение и попробуйте снова."
+            )
         except Exception as e:
-            logger.exception("Evidence photo save failed")
-            await update.message.reply_text("Ошибка сохранения фото.")
+            logger.exception("Evidence photo save failed: %s", type(e).__name__)
+            await update.message.reply_text(
+                "Ошибка сохранения фото. Попробуйте отправить ещё раз."
+            )
         return
 
     # No active incident — photo analysis goes through the Drone bot
@@ -483,7 +541,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 return
             reg["name"] = name
             reg["step"] = _REG_STEP_BADGE
-            await update.message.reply_text("Введите ваш табельный номер:")
+            await update.message.reply_text("Шаг 2 из 3: Введите ваш табельный номер:")
             return
 
         if reg["step"] == _REG_STEP_BADGE:
@@ -492,45 +550,40 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 await update.message.reply_text("Табельный номер не может быть пустым.")
                 return
 
+            reg["badge"] = badge
+            reg["step"] = _REG_STEP_CONFIRM
+
             slug = reg["district_slug"]
             district = DISTRICTS.get(slug)
-            if not district:
-                _registration_state.pop(chat_id, None)
-                await update.message.reply_text(
-                    "Ошибка регистрации. Попробуйте /start."
-                )
-                return
+            district_name = district.name_ru if district else slug
 
-            try:
-                add_ranger(
-                    name=reg["name"],
-                    chat_id=chat_id,
-                    badge_number=badge,
-                    zone_lat_min=district.lat_min,
-                    zone_lat_max=district.lat_max,
-                    zone_lon_min=district.lon_min,
-                    zone_lon_max=district.lon_max,
-                )
-            except Exception:
-                logger.exception("Failed to register ranger chat_id=%s", chat_id)
-                _registration_state.pop(chat_id, None)
-                await update.message.reply_text("Ошибка регистрации. Попробуйте позже.")
-                return
-
-            # Assign random position within the district
-            rand_lat = round(random.uniform(district.lat_min, district.lat_max), 6)
-            rand_lon = round(random.uniform(district.lon_min, district.lon_max), 6)
-            update_position(chat_id, rand_lat, rand_lon)
-
-            _registration_state.pop(chat_id, None)
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "Подтвердить", callback_data="confirm_reg:yes"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "Начать заново", callback_data="confirm_reg:no"
+                        )
+                    ],
+                ]
+            )
             await update.message.reply_text(
-                f"Вы зарегистрированы!\n\n"
+                f"Шаг 3 из 3: Проверьте данные:\n\n"
                 f"ФИО: {reg['name']}\n"
                 f"Табельный номер: {badge}\n"
-                f"Лесничество: {district.name_ru}\n"
-                f"Ваша позиция: {rand_lat:.4f} N, {rand_lon:.4f} E\n\n"
-                "Вы будете получать оповещения о подозрительной активности "
-                "в вашей зоне. Используйте /stop для отключения."
+                f"Лесничество: {district_name}",
+                reply_markup=keyboard,
+            )
+            return
+
+        if reg["step"] == _REG_STEP_CONFIRM:
+            # Waiting for button press, ignore text
+            await update.message.reply_text(
+                "Нажмите кнопку «Подтвердить» или «Начать заново»."
             )
             return
 
@@ -646,6 +699,11 @@ async def _generate_and_send_protocol(chat_id: int, incident) -> None:
         return
 
     # 4. Send PDF and resolve
+    logger.info(
+        "AUDIT chat_id=%s action=protocol_generated incident=%s result=ok",
+        chat_id,
+        incident.id,
+    )
     await send_protocol_pdf(chat_id, pdf_bytes)
     update_incident(
         incident.id,
@@ -654,6 +712,199 @@ async def _generate_and_send_protocol(chat_id: int, incident) -> None:
     )
     incident.status = "resolved"
     clear_chat_incident(chat_id)
+
+
+# ---------- /help ----------
+
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /help — show bot usage instructions."""
+    await update.message.reply_text(
+        "ForestGuard — бот для лесных инспекторов\n\n"
+        "Команды:\n"
+        "/start — Регистрация или активация\n"
+        "/status — Статус регистрации\n"
+        "/stop — Отключить оповещения\n"
+        "/test — Тестовый алерт\n"
+        "/help — Эта справка\n"
+        "/cancel — Отменить регистрацию\n"
+        "/rangers — Список инспекторов (админ)\n\n"
+        "При получении алерта:\n"
+        "1. Нажмите «Принять вызов»\n"
+        "2. Отправьте геолокацию на месте\n"
+        "3. Подтвердите или опровергните нарушение\n"
+        "4. Отправьте фото и описание\n"
+        "5. Получите PDF-протокол"
+    )
+
+
+# ---------- /cancel ----------
+
+
+async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /cancel — cancel ongoing registration."""
+    chat_id = update.effective_chat.id
+    if chat_id in _registration_state:
+        _registration_state.pop(chat_id, None)
+        await update.message.reply_text(
+            "Регистрация отменена. Отправьте /start чтобы начать заново."
+        )
+    else:
+        await update.message.reply_text("Нет активной регистрации для отмены.")
+
+
+# ---------- /rangers (admin) ----------
+
+
+async def rangers_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /rangers — show all registered rangers (admin only)."""
+    chat_id = update.effective_chat.id
+    if ADMIN_CHAT_IDS and chat_id not in ADMIN_CHAT_IDS:
+        await update.message.reply_text("Эта команда доступна только администраторам.")
+        return
+
+    rangers = get_all_rangers()
+    if not rangers:
+        await update.message.reply_text("Нет зарегистрированных инспекторов.")
+        return
+
+    lines = [f"Инспекторы ({len(rangers)}):"]
+    for r in rangers:
+        state = "вкл" if r.active else "выкл"
+        lines.append(f"• {r.name} [{r.badge_number}] — {state}")
+    await update.message.reply_text("\n".join(lines))
+
+
+# ---------- Registration confirmation callback ----------
+
+
+async def confirm_reg_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle confirm_reg:yes / confirm_reg:no buttons."""
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat_id
+    reg = _registration_state.get(chat_id)
+
+    if not reg or reg["step"] != _REG_STEP_CONFIRM:
+        await query.edit_message_text("Регистрация не найдена. Отправьте /start.")
+        return
+
+    answer = query.data.split(":", 1)[1]
+
+    if answer == "no":
+        _registration_state.pop(chat_id, None)
+        await query.edit_message_text(
+            "Регистрация отменена. Отправьте /start чтобы начать заново."
+        )
+        return
+
+    # answer == "yes" — complete registration
+    slug = reg["district_slug"]
+    district = DISTRICTS.get(slug)
+    if not district:
+        _registration_state.pop(chat_id, None)
+        await query.edit_message_text("Ошибка регистрации. Попробуйте /start.")
+        return
+
+    try:
+        add_ranger(
+            name=reg["name"],
+            chat_id=chat_id,
+            badge_number=reg["badge"],
+            zone_lat_min=district.lat_min,
+            zone_lat_max=district.lat_max,
+            zone_lon_min=district.lon_min,
+            zone_lon_max=district.lon_max,
+        )
+    except Exception:
+        logger.exception("Failed to register ranger chat_id=%s", chat_id)
+        _registration_state.pop(chat_id, None)
+        await query.edit_message_text("Ошибка регистрации. Попробуйте позже.")
+        return
+
+    # Assign random position within the district
+    rand_lat = round(random.uniform(district.lat_min, district.lat_max), 6)
+    rand_lon = round(random.uniform(district.lon_min, district.lon_max), 6)
+    update_position(chat_id, rand_lat, rand_lon)
+
+    _registration_state.pop(chat_id, None)
+    await query.edit_message_text(
+        f"Вы зарегистрированы!\n\n"
+        f"ФИО: {reg['name']}\n"
+        f"Табельный номер: {reg['badge']}\n"
+        f"Лесничество: {district.name_ru}\n"
+        f"Ваша позиция: {rand_lat:.4f} N, {rand_lon:.4f} E\n\n"
+        "Вы будете получать оповещения о подозрительной активности "
+        "в вашей зоне. Используйте /stop для отключения."
+    )
+
+
+# ---------- Snooze callback ----------
+
+
+async def snooze_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle 'Отложить 15 мин' button — snooze alert and re-send later."""
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.split(":", 1)
+    if len(parts) < 2:
+        return
+
+    incident_id = parts[1]
+    chat_id = query.message.chat_id
+
+    logger.info(
+        "AUDIT chat_id=%s action=snooze incident=%s result=snoozed_15m",
+        chat_id,
+        incident_id,
+    )
+
+    # Remove buttons, show snoozed status
+    incident = get_incident(incident_id)
+    class_ru = (
+        CLASS_NAME_RU.get(incident.audio_class, incident.audio_class)
+        if incident
+        else "?"
+    )
+
+    await query.edit_message_text(
+        f"*АЛЕРТ: {class_ru}*\n━━━━━━━━━━━━━━━━\nОтложено на 15 минут",
+        parse_mode="Markdown",
+    )
+
+    # Schedule re-send after 15 minutes via job_queue
+    if context.job_queue and incident and incident.status == "pending":
+        context.job_queue.run_once(
+            _snooze_resend,
+            when=900,
+            data={"chat_id": chat_id, "incident_id": incident_id},
+        )
+
+
+async def _snooze_resend(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Job callback: re-send alert after snooze expires."""
+    data = context.job.data
+    chat_id = data["chat_id"]
+    incident_id = data["incident_id"]
+
+    incident = get_incident(incident_id)
+    if not incident or incident.status != "pending":
+        return  # Already handled
+
+    await send_pending_to_chat(
+        chat_id=chat_id,
+        lat=incident.lat,
+        lon=incident.lon,
+        audio_class=incident.audio_class,
+        reason="Повторный алерт после snooze",
+        confidence=incident.confidence,
+        gating_level=incident.gating_level,
+        is_demo=incident.is_demo,
+    )
 
 
 # ---------- Handler registration ----------
@@ -666,10 +917,15 @@ def get_handlers() -> list:
         CommandHandler("status", status),
         CommandHandler("stop", stop),
         CommandHandler("test", test_alert),
+        CommandHandler("help", help_cmd),
+        CommandHandler("cancel", cancel_cmd),
+        CommandHandler("rangers", rangers_cmd),
         CallbackQueryHandler(district_chosen, pattern=r"^district:"),
         CallbackQueryHandler(accept_callback, pattern=r"^accept:"),
         CallbackQueryHandler(verdict_callback, pattern=r"^verdict:"),
         CallbackQueryHandler(rag_callback, pattern=r"^rag:"),
+        CallbackQueryHandler(confirm_reg_callback, pattern=r"^confirm_reg:"),
+        CallbackQueryHandler(snooze_callback, pattern=r"^snooze:"),
         MessageHandler(filters.VOICE, voice_handler),
         MessageHandler(filters.LOCATION, location_handler),
         MessageHandler(filters.PHOTO, handle_inspector_photo),

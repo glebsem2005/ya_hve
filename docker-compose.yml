@@ -22,6 +22,8 @@ services:
   edge:
     build: .
     command: sh -c "python demo/generate_audio.py && python -m edge.server"
+    ports:
+      - "8001:8001"
     env_file:
       - .env
     volumes:
