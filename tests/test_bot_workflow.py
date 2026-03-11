@@ -490,11 +490,12 @@ class TestTextOnSite:
         assert incident.ranger_report_raw == "Незаконная рубка подтверждена"
 
     @pytest.mark.asyncio
-    async def test_text_no_incident_ignored(self):
+    async def test_text_no_incident_gets_fallback(self):
         update = _make_text_update(2500, "Просто текст")
         await text_handler(update, MagicMock())
 
-        update.message.reply_text.assert_not_called()
+        text = update.message.reply_text.call_args[0][0]
+        assert "/start" in text or "/help" in text
 
 
 # ---------- TestProtocolGeneration ----------

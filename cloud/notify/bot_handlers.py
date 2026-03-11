@@ -591,7 +591,16 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     incident = get_active_incident_for_chat(chat_id)
 
     if not incident or incident.status != "on_site":
-        return  # Ignore non-contextual text
+        ranger = get_ranger_by_chat_id(chat_id)
+        if ranger:
+            await update.message.reply_text(
+                "Я не понял сообщение. Используйте /help для списка команд."
+            )
+        else:
+            await update.message.reply_text(
+                "Вы не зарегистрированы. Отправьте /start для начала."
+            )
+        return
 
     incident.ranger_report_raw = text
     update_incident(incident.id, ranger_report_raw=text)

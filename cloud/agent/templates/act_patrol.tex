@@ -1,0 +1,284 @@
+% =============================================================================
+% Акт патрулирования лесов
+% Приказ Минприроды N 955 от 15.12.2021, Приложение 3
+% Оформление: ГОСТ Р 7.0.97-2016
+% Engine: LuaLaTeX
+% =============================================================================
+\documentclass[12pt, a4paper]{article}
+
+% --- Язык ---
+\usepackage[russian]{babel}
+
+% --- Шрифты (LuaLaTeX + fontspec) ---
+\usepackage{fontspec}
+\defaultfontfeatures{Ligatures=TeX}
+((% if font_path %))
+\setmainfont{PTSerif}[
+    Path           = {((* font_path *))},
+    Extension      = {.ttf},
+    UprightFont    = {*-Regular},
+    BoldFont       = {*-Bold},
+    ItalicFont     = {*-Italic},
+    BoldItalicFont = {*-BoldItalic}
+]
+((% else %))
+\setmainfont{PT Serif}
+((% endif %))
+
+% --- Поля по ГОСТ Р 7.0.97-2016 ---
+\usepackage[
+    a4paper,
+    left=30mm,
+    right=10mm,
+    top=20mm,
+    bottom=20mm
+]{geometry}
+
+% --- Типографика ---
+\usepackage{setspace}
+\setstretch{1.15}
+\setlength{\parindent}{1.25cm}
+
+% --- Пакеты ---
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{unicode=true, colorlinks=false, pdfencoding=auto}
+
+% --- Колонтитулы ---
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\small Стр.~\thepage~из~\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% --- Без нумерации разделов ---
+\setcounter{secnumdepth}{0}
+
+% --- Линия для подписи ---
+\newcommand{\sigline}[1]{%
+    \noindent\begin{tabular}{p{0.45\textwidth} p{0.08\textwidth} p{0.40\textwidth}}
+        #1 & & \rule{6cm}{0.4pt} \\
+           & & {\small\hfill(подпись, расшифровка)\hfill} \\
+    \end{tabular}%
+}
+
+% --- Поле «заполняется от руки» ---
+\newcommand{\blankfield}[2][6cm]{%
+    \noindent #2~\rule{#1}{0.4pt}%
+}
+
+% =============================================================================
+\begin{document}
+\thispagestyle{fancy}
+
+% ===== ШАПКА =====
+\begin{center}
+    {\small\textsc{Министерство лесного хозяйства и охраны объектов животного мира}}\\
+    {\small\textsc{Нижегородской области}}\\[4pt]
+    {\normalsize\textbf{Варнавинское лесничество}}\\
+((% if sub_district %))
+    {\small ((* sub_district|e *)) участковое лесничество}\\
+((% endif %))
+\end{center}
+
+\noindent\rule{\textwidth}{0.8pt}
+
+\vspace{0.6cm}
+
+% ===== НАЗВАНИЕ =====
+\begin{center}
+    {\Large\textbf{АКТ}}\\[2pt]
+    {\large\textbf{патрулирования лесов}}\\[6pt]
+    № \textbf{((* act_number|e *))} \hfill от «((* act_day|e *))»~((* act_month|e *))~((* act_year|e *))~г.
+\end{center}
+
+\vspace{0.4cm}
+
+% ===== 1. СВЕДЕНИЯ О ПАТРУЛИРОВАНИИ =====
+\section{1. Сведения о патрулировании}
+
+\noindent
+\begin{tabularx}{\textwidth}{@{}>{\bfseries}p{5.5cm}X@{}}
+    Дата патрулирования: & ((* patrol_date|e *)) \\[3pt]
+    Время начала: & ((* patrol_time_start|e *)) \\[3pt]
+    Время окончания: & ((* patrol_time_end|e *)) \\[3pt]
+    Способ патрулирования: & Автоматический акустический мониторинг (система Faun) \\[3pt]
+    Маршрут / зона покрытия: & Зона акустических сенсоров, координаты центра: ((* lat *))°N, ((* lon *))°E \\
+\end{tabularx}
+
+% ===== 2. ЛИЧНЫЙ СОСТАВ =====
+\section{2. Личный состав}
+
+\noindent
+\begin{tabularx}{\textwidth}{@{}>{\bfseries}p{5.5cm}X@{}}
+((% if ranger_name %))
+    Инспектор: & ((* ranger_name|e *)) \\[3pt]
+((% else %))
+    Инспектор: & \rule{8cm}{0.4pt} \\[3pt]
+((% endif %))
+((% if badge_number %))
+    Удостоверение №: & ((* badge_number|e *)) \\[3pt]
+((% else %))
+    Удостоверение №: & \rule{5cm}{0.4pt} \\[3pt]
+((% endif %))
+    Орган лесной охраны: & Варнавинское лесничество \\
+\end{tabularx}
+
+% ===== 3. МЕСТО ОБСЛЕДОВАНИЯ =====
+\section{3. Место обследования}
+
+\noindent
+\begin{tabularx}{\textwidth}{@{}>{\bfseries}p{5.5cm}X@{}}
+    Субъект РФ: & Нижегородская область \\[3pt]
+    Лесничество: & Варнавинское \\[3pt]
+((% if sub_district %))
+    Участковое лесничество: & ((* sub_district|e *)) \\[3pt]
+((% else %))
+    Участковое лесничество: & --- \\[3pt]
+((% endif %))
+((% if quarter %))
+    Квартал: & ((* quarter|e *)) \\[3pt]
+((% else %))
+    Квартал: & --- \\[3pt]
+((% endif %))
+((% if compartment %))
+    Выдел: & ((* compartment|e *)) \\[3pt]
+((% else %))
+    Выдел: & --- \\[3pt]
+((% endif %))
+    Координаты GPS: & ((* lat *))°N, ((* lon *))°E \\[3pt]
+((% if forest_purpose %))
+    Целевое назначение лесов: & ((* forest_purpose|e *)) \\
+((% else %))
+    Целевое назначение лесов: & требует уточнения \\
+((% endif %))
+\end{tabularx}
+
+% ===== 4. РЕЗУЛЬТАТЫ ПАТРУЛИРОВАНИЯ =====
+\section{4. Результаты патрулирования}
+
+\subsection{4.1. Данные системы акустического мониторинга}
+
+\noindent
+\begin{tabularx}{\textwidth}{@{}>{\bfseries}p{5.5cm}X@{}}
+    Тип акустического события: & ((* violation_type|e *)) \\[3pt]
+    Уверенность классификатора: & ((* confidence *))\% \\[3pt]
+    Уровень приоритета: & ((* gating_level|e *)) \\[3pt]
+    Время обнаружения: & ((* detected_at|e *)) \\[3pt]
+    ID алерта: & ((* incident_id|e *)) \\[3pt]
+    Модель классификатора: & YAMNet v7 (FEATURE\_DIM=2048) \\
+\end{tabularx}
+
+\subsection{4.2. Предварительная правовая квалификация}
+
+\noindent
+Предполагаемая статья: \textbf{((* article|e *))}
+
+((% if legal_articles %))
+\vspace{0.3cm}
+\noindent\textbf{Применимые правовые нормы (RAG-анализ):}
+
+\noindent ((* legal_articles|e *))
+((% endif %))
+
+((% if drone_photo_path %))
+\subsection{4.3. Данные БПЛА}
+
+\noindent
+\begin{center}
+    \includegraphics[width=0.65\textwidth]{((* drone_photo_path *))}\\[4pt]
+    {\small Снимок с БПЛА. Координаты: ((* lat *))°N, ((* lon *))°E}
+\end{center}
+
+((% if drone_comment %))
+\vspace{0.2cm}
+\noindent\textbf{Анализ снимка (Gemma 3 27B):}
+
+\noindent ((* drone_comment|e *))
+((% endif %))
+((% endif %))
+
+((% if ranger_photo_path or ranger_report %))
+\subsection{4.4. Данные инспектора}
+
+((% if ranger_photo_path %))
+\noindent
+\begin{center}
+    \includegraphics[width=0.55\textwidth]{((* ranger_photo_path *))}\\[4pt]
+    {\small Фото с места, сделанное инспектором}
+\end{center}
+((% endif %))
+
+((% if ranger_report %))
+\vspace{0.2cm}
+\noindent\textbf{Описание обстановки:}
+
+\noindent ((* ranger_report|e *))
+((% endif %))
+((% endif %))
+
+% ===== 5. ПРИНЯТЫЕ МЕРЫ =====
+\section{5. Принятые меры}
+
+\noindent Автоматический алерт направлен инспектору через Telegram-бот <<Faun>>
+в ((* detected_at|e *)).
+((% if ranger_name %))
+Инспектор ((* ranger_name|e *)) принял вызов и прибыл на место.
+((% endif %))
+
+% ===== 6. ТЕХНИЧЕСКИЕ СРЕДСТВА =====
+\section{6. Применённые технические средства}
+
+\begin{itemize}[nosep, leftmargin=1.5cm]
+    \item Акустические сенсоры (система Faun) --- обнаружение и классификация звуковых событий
+    \item Нейросеть YAMNet v7 (FEATURE\_DIM=2048) --- классификация акустических сигналов
+    \item TDOA-триангуляция --- определение координат источника звука
+    \item БПЛА (дрон) --- фотофиксация обстановки на месте
+    \item Gemma 3 27B (Yandex Cloud AI Studio) --- анализ снимков с БПЛА
+    \item YandexGPT --- юридизация описаний, правовая квалификация
+\end{itemize}
+
+% ===== 7. ПРИЛОЖЕНИЯ =====
+\section{7. Приложения}
+
+\begin{enumerate}[nosep, leftmargin=1.5cm]
+((% if drone_photo_path %))
+    \item Снимок с БПЛА (стр.~\pageref{LastPage} данного акта)
+((% endif %))
+((% if ranger_photo_path %))
+    \item Фото с места, сделанное инспектором
+((% endif %))
+    \item Аудиозапись акустического события (хранится в системе Faun, ID: ((* incident_id|e *)))
+    \item Спектрограмма акустического сигнала
+\end{enumerate}
+
+% ===== 8. ПОДПИСИ =====
+\section{8. Подписи}
+
+\vspace{0.6cm}
+
+\sigline{Инспектор:}
+
+\vspace{0.6cm}
+
+\blankfield{Дата подписания:}
+
+% ===== ФУТЕР =====
+\vspace{1.5cm}
+\noindent\rule{\textwidth}{0.4pt}
+
+\begin{center}
+    {\small\color{gray} Акт сформирован автоматически системой акустического мониторинга леса <<Faun>>}\\
+    {\small\color{gray} (ForestGuard). Данные подлежат верификации инспектором лесной охраны.}\\
+    {\small\color{gray} Основание: Приказ Минприроды России от 15.12.2021 № 955, п.~14, Приложение~3.}
+\end{center}
+
+\end{document}

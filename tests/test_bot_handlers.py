@@ -481,6 +481,34 @@ class TestRangersCommand:
         assert "нет зарегистрированных" in text.lower()
 
 
+class TestTextFallback:
+    @pytest.mark.asyncio
+    @patch("cloud.notify.bot_handlers.get_active_incident_for_chat", return_value=None)
+    async def test_unregistered_user_gets_start_hint(self, _mock_incident):
+        update = _make_update(chat_id=5000, text="привет")
+        await text_handler(update, MagicMock())
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "/start" in text
+
+    @pytest.mark.asyncio
+    @patch("cloud.notify.bot_handlers.get_active_incident_for_chat", return_value=None)
+    async def test_registered_user_gets_help_hint(self, _mock_incident):
+        add_ranger(
+            "Фоллбэк Тест",
+            chat_id=5100,
+            zone_lat_min=57.0,
+            zone_lat_max=58.0,
+            zone_lon_min=44.0,
+            zone_lon_max=46.0,
+        )
+        update = _make_update(chat_id=5100, text="привет")
+        await text_handler(update, MagicMock())
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "/help" in text
+
+
 class TestSnoozeCallback:
     @pytest.mark.asyncio
     async def test_snooze_edits_message(self):
