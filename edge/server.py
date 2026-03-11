@@ -388,6 +388,27 @@ async def run():
                     except Exception as e:
                         logger.error("LoRa send failed — packet lost: %s", e)
 
+                elif decision.send_lora:
+                    # --- VERIFY: send LoRa without drone photo ---
+                    packet = {
+                        "class": audio.label,
+                        "confidence": audio.confidence,
+                        "lat": location.lat,
+                        "lon": location.lon,
+                        "priority": decision.priority,
+                        "error_m": location.error_m,
+                        "photo_b64": None,
+                        "ndsi": ndsi_result.ndsi,
+                        "ndsi_interpretation": ndsi_result.interpretation,
+                    }
+                    try:
+                        await asyncio.wait_for(lora.send(packet), timeout=10)
+                        logger.info("LoRa verify packet sent (no drone)")
+                    except asyncio.TimeoutError:
+                        logger.error("LoRa send timed out — packet lost")
+                    except Exception as e:
+                        logger.error("LoRa send failed — packet lost: %s", e)
+
                 # Cooldown before next detection cycle
                 await asyncio.sleep(5)
                 detector.reset()

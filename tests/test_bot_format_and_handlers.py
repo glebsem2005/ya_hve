@@ -117,9 +117,9 @@ class TestEscapeMarkdown:
 
 
 class TestHandlerRegistration:
-    def test_get_handlers_count_17(self):
+    def test_get_handlers_count_18(self):
         handlers = get_handlers()
-        assert len(handlers) == 17
+        assert len(handlers) == 18
 
     def test_text_handler_is_last(self):
         from telegram.ext import MessageHandler

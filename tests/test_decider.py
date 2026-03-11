@@ -12,6 +12,7 @@ import pytest
 
 from edge.audio.classifier import AudioResult
 from edge.decision.decider import (
+    ALERT_THRESHOLDS,
     CONFIDENCE_ALERT,
     CONFIDENCE_VERIFY,
     Decision,
@@ -104,6 +105,79 @@ class TestConfidence:
     def test_confidence_below_alert_threshold(self) -> None:
         """Just below CONFIDENCE_ALERT → verify zone (LoRa only)."""
         decision = decide(_ar("chainsaw", 0.69), _loc())
+        assert decision.send_drone is False
+        assert decision.send_lora is True
+
+
+# ---------------------------------------------------------------------------
+# Differentiated alert thresholds per class
+# ---------------------------------------------------------------------------
+
+
+class TestDifferentiatedThresholds:
+    """Critical threats (gunshot, fire) have lower ALERT threshold (0.55).
+    Other classes keep the default 0.70."""
+
+    def test_alert_thresholds_dict_exists(self) -> None:
+        assert isinstance(ALERT_THRESHOLDS, dict)
+        assert "gunshot" in ALERT_THRESHOLDS
+        assert "fire" in ALERT_THRESHOLDS
+
+    def test_gunshot_threshold_is_055(self) -> None:
+        assert ALERT_THRESHOLDS["gunshot"] == 0.55
+
+    def test_fire_threshold_is_055(self) -> None:
+        assert ALERT_THRESHOLDS["fire"] == 0.55
+
+    def test_chainsaw_threshold_is_070(self) -> None:
+        assert ALERT_THRESHOLDS["chainsaw"] == 0.70
+
+    def test_gunshot_alert_at_055(self) -> None:
+        """Gunshot at 0.55 → ALERT (drone flies)."""
+        decision = decide(_ar("gunshot", 0.55), _loc())
+        assert decision.send_drone is True
+        assert decision.send_lora is True
+        assert decision.priority == "high"
+
+    def test_gunshot_verify_at_050(self) -> None:
+        """Gunshot at 0.50 → VERIFY (no drone, LoRa only)."""
+        decision = decide(_ar("gunshot", 0.50), _loc())
+        assert decision.send_drone is False
+        assert decision.send_lora is True
+
+    def test_fire_alert_at_055(self) -> None:
+        """Fire at 0.55 → ALERT (drone flies)."""
+        decision = decide(_ar("fire", 0.55), _loc())
+        assert decision.send_drone is True
+        assert decision.send_lora is True
+        assert decision.priority == "high"
+
+    def test_fire_verify_at_050(self) -> None:
+        """Fire at 0.50 → VERIFY (no drone)."""
+        decision = decide(_ar("fire", 0.50), _loc())
+        assert decision.send_drone is False
+        assert decision.send_lora is True
+
+    def test_chainsaw_still_needs_070(self) -> None:
+        """Chainsaw at 0.65 → VERIFY (threshold unchanged at 0.70)."""
+        decision = decide(_ar("chainsaw", 0.65), _loc())
+        assert decision.send_drone is False
+        assert decision.send_lora is True
+
+    def test_chainsaw_at_070_alerts(self) -> None:
+        """Chainsaw at 0.70 → ALERT (as before)."""
+        decision = decide(_ar("chainsaw", 0.70), _loc())
+        assert decision.send_drone is True
+
+    def test_engine_still_needs_070(self) -> None:
+        """Engine at 0.65 → VERIFY (threshold unchanged)."""
+        decision = decide(_ar("engine", 0.65), _loc())
+        assert decision.send_drone is False
+        assert decision.send_lora is True
+
+    def test_axe_still_needs_070(self) -> None:
+        """Axe at 0.65 → VERIFY."""
+        decision = decide(_ar("axe", 0.65), _loc())
         assert decision.send_drone is False
         assert decision.send_lora is True
 

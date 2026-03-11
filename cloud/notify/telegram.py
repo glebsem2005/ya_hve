@@ -180,25 +180,36 @@ async def send_pending(
         )
         text += f"Ближайший инспектор: {nearest[0].name} ({dist_km:.1f} км)\n\n"
 
-    text += "Дрон вылетел для подтверждения"
-
-    keyboard = InlineKeyboardMarkup(
+    keyboard_rows = [
+        [InlineKeyboardButton("На карте", url=maps_url)],
         [
-            [InlineKeyboardButton("На карте", url=maps_url)],
+            InlineKeyboardButton(
+                "Принять вызов",
+                callback_data=f"accept:{incident.id}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                "Отложить 15 мин",
+                callback_data=f"snooze:{incident.id}",
+            ),
+        ],
+    ]
+
+    if level == "verify":
+        text += "Требуется проверка (дрон не отправлен)"
+        keyboard_rows.append(
             [
                 InlineKeyboardButton(
-                    "Принять вызов",
-                    callback_data=f"accept:{incident.id}",
+                    "Отправить дрона",
+                    callback_data=f"dispatch_drone:{incident.id}",
                 ),
-            ],
-            [
-                InlineKeyboardButton(
-                    "Отложить 15 мин",
-                    callback_data=f"snooze:{incident.id}",
-                ),
-            ],
-        ]
-    )
+            ]
+        )
+    else:
+        text += "Дрон вылетел для подтверждения"
+
+    keyboard = InlineKeyboardMarkup(keyboard_rows)
 
     if broadcast:
         rangers = get_all_rangers()
@@ -266,26 +277,38 @@ async def send_pending_to_chat(
         f"Координаты: {lat:.4f} N, {lon:.4f} E\n"
         f"Уверенность: {conf_pct}\n"
         f"Уровень: {level_label}\n\n"
-        f"Дрон вылетел для подтверждения"
     )
 
-    keyboard = InlineKeyboardMarkup(
+    keyboard_rows = [
+        [InlineKeyboardButton("На карте", url=maps_url)],
         [
-            [InlineKeyboardButton("На карте", url=maps_url)],
+            InlineKeyboardButton(
+                "Принять вызов",
+                callback_data=f"accept:{incident.id}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                "Отложить 15 мин",
+                callback_data=f"snooze:{incident.id}",
+            ),
+        ],
+    ]
+
+    if level == "verify":
+        text += "Требуется проверка (дрон не отправлен)"
+        keyboard_rows.append(
             [
                 InlineKeyboardButton(
-                    "Принять вызов",
-                    callback_data=f"accept:{incident.id}",
+                    "Отправить дрона",
+                    callback_data=f"dispatch_drone:{incident.id}",
                 ),
-            ],
-            [
-                InlineKeyboardButton(
-                    "Отложить 15 мин",
-                    callback_data=f"snooze:{incident.id}",
-                ),
-            ],
-        ]
-    )
+            ]
+        )
+    else:
+        text += "Дрон вылетел для подтверждения"
+
+    keyboard = InlineKeyboardMarkup(keyboard_rows)
 
     try:
         msg = await bot.send_message(

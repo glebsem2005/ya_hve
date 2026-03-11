@@ -946,6 +946,71 @@ async def _snooze_resend(context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+# ---------- Dispatch drone (VERIFY-level manual trigger) ----------
+
+
+async def dispatch_drone_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle 'Отправить дрона' button for VERIFY-level alerts."""
+    query = update.callback_query
+    await _safe_answer(query)
+
+    parts = query.data.split(":", 1)
+    if len(parts) < 2:
+        return
+
+    incident_id = parts[1]
+    chat_id = query.message.chat_id
+    incident = get_incident(incident_id)
+
+    if not incident:
+        await query.edit_message_text("Инцидент не найден.")
+        return
+
+    if incident.status not in ("pending", "verify"):
+        await query.edit_message_text(
+            f"Инцидент уже обработан (статус: {incident.status})."
+        )
+        return
+
+    logger.info(
+        "AUDIT chat_id=%s action=dispatch_drone incident=%s",
+        chat_id,
+        incident_id,
+    )
+
+    class_ru = CLASS_NAME_RU.get(incident.audio_class, incident.audio_class)
+    maps_url = f"https://maps.yandex.ru/?pt={incident.lon},{incident.lat}&z=15"
+
+    await query.edit_message_text(
+        f"*АЛЕРТ: {class_ru}*\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"Дрон отправлен на {incident.lat:.4f}°N {incident.lon:.4f}°E\n"
+        f"Ожидайте фотографию\\.\\.\\.\n\n"
+        f"[На карте]({maps_url})",
+        parse_mode="MarkdownV2",
+    )
+
+    # Trigger drone dispatch via internal API
+    import httpx
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"http://localhost:8000/api/v1/incidents/{incident_id}/dispatch-drone",
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                logger.error(
+                    "Drone dispatch API returned %s: %s",
+                    resp.status_code,
+                    resp.text,
+                )
+    except Exception as e:
+        logger.error("Drone dispatch API call failed: %s", e)
+
+
 # ---------- Handler registration ----------
 
 
@@ -961,6 +1026,7 @@ def get_handlers() -> list:
         CommandHandler("rangers", rangers_cmd),
         CallbackQueryHandler(district_chosen, pattern=r"^district:"),
         CallbackQueryHandler(accept_callback, pattern=r"^accept:"),
+        CallbackQueryHandler(dispatch_drone_callback, pattern=r"^dispatch_drone:"),
         CallbackQueryHandler(verdict_callback, pattern=r"^verdict:"),
         CallbackQueryHandler(rag_callback, pattern=r"^rag:"),
         CallbackQueryHandler(confirm_reg_callback, pattern=r"^confirm_reg:"),

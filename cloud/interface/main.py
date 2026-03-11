@@ -926,6 +926,72 @@ async def live_photo(file: UploadFile):
 
 
 # Legacy endpoint for backward compatibility
+@app.post("/api/v1/incidents/{incident_id}/dispatch-drone")
+async def dispatch_drone(incident_id: str):
+    """Manually dispatch drone to incident location (VERIFY Telegram button)."""
+    incident = get_incident(incident_id)
+    if not incident:
+        return JSONResponse(status_code=404, content={"error": "incident not found"})
+
+    asyncio.create_task(
+        _run_drone_for_incident(
+            incident_id, incident.lat, incident.lon, incident.audio_class
+        )
+    )
+    return {"status": "dispatched", "incident_id": incident_id}
+
+
+async def _run_drone_for_incident(
+    incident_id: str, lat: float, lon: float, audio_class: str
+) -> None:
+    """Run drone pipeline for a manually dispatched VERIFY incident."""
+    try:
+        from edge.drone.simulated import SimulatedDrone
+        from cloud.vision.classifier import classify_photo
+        from cloud.agent.decision import compose_alert
+        from cloud.notify.telegram import send_confirmed
+        from cloud.db.microphones import get_nearest_online
+
+        nearest = get_nearest_online(lat, lon, limit=1)
+        home_lat = nearest[0].lat if nearest else lat
+        home_lon = nearest[0].lon if nearest else lon
+
+        drone = SimulatedDrone(
+            home_lat=home_lat, home_lon=home_lon, scenario=audio_class
+        )
+        await drone.takeoff()
+        async for pos in drone.fly_to(lat, lon):
+            await broadcast({"event": "drone_moving", "lat": pos.lat, "lon": pos.lon})
+        photo = await drone.capture_photo()
+        await broadcast({"event": "drone_photo", "drone_b64": photo.b64})
+        await drone.return_home()
+
+        vision_result = await classify_photo(photo.b64)
+        alert = await compose_alert(
+            audio_class=audio_class,
+            visual_description=vision_result.description,
+            lat=lat,
+            lon=lon,
+            confidence=0.0,
+            has_human=vision_result.has_human,
+            has_fire=vision_result.has_fire,
+            has_felling=vision_result.has_felling,
+            has_machinery=vision_result.has_machinery,
+        )
+
+        incident = get_incident(incident_id)
+        if incident:
+            import base64 as b64mod
+
+            photo_bytes = b64mod.b64decode(photo.b64) if photo.b64 else None
+            await send_confirmed(alert, photo_bytes, incident)
+
+        await broadcast({"event": "pipeline_end", "reason": "manual_drone_complete"})
+    except Exception:
+        logger.exception("Manual drone dispatch failed for incident %s", incident_id)
+        await broadcast({"event": "pipeline_end", "reason": "drone_error"})
+
+
 @app.post("/demo/start")
 async def start_demo_legacy(scenario: str = "chainsaw"):
     asyncio.create_task(_run_demo(scenario))
@@ -1140,7 +1206,19 @@ async def _run_demo(
         )
 
         if not decision.send_drone:
-            await broadcast({"event": "pipeline_end", "reason": "no_anomaly"})
+            if decision.send_lora:
+                # VERIFY: record incident + notify rangers (no drone photo)
+                await deps["send_pending"](
+                    location.lat,
+                    location.lon,
+                    audio_result.label,
+                    decision.reason,
+                    confidence=audio_result.confidence,
+                    is_demo=True,
+                )
+                await broadcast({"event": "pipeline_end", "reason": "verify_no_drone"})
+            else:
+                await broadcast({"event": "pipeline_end", "reason": "no_anomaly"})
             return
 
         drone = deps["SimulatedDrone"](

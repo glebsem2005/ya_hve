@@ -7,9 +7,21 @@ from edge.audio.ndsi import NDSIResult
 from edge.tdoa.triangulate import TriangulationResult
 from cloud.db.permits import has_valid_permit
 
-CONFIDENCE_ALERT = 0.70  # >0.70: 95% accuracy -> drone + LoRa
-CONFIDENCE_VERIFY = 0.40  # 0.40-0.70: 49% accuracy -> only LoRa
+CONFIDENCE_ALERT = 0.70  # default threshold for most classes
+CONFIDENCE_VERIFY = 0.40  # 0.40-threshold: only LoRa
 # <0.40: log_only (13% accuracy) -> no action
+
+# Per-class alert thresholds: critical threats (gunshot, fire) get a lower
+# bar because the cost of missing them far exceeds the cost of a false flight.
+ALERT_THRESHOLDS: dict[AudioClass, float] = {
+    "gunshot": 0.55,
+    "fire": 0.55,
+    "chainsaw": 0.70,
+    "axe": 0.70,
+    "engine": 0.70,
+    "background": 1.0,  # never triggers
+    "unknown": 0.70,
+}
 
 PRIORITY_MAP: dict[AudioClass, str] = {
     "chainsaw": "high",
@@ -85,8 +97,9 @@ def decide(
 
     priority = PRIORITY_MAP.get(audio.label, "medium")
     suffix = _ndsi_suffix(ndsi)
+    threshold = ALERT_THRESHOLDS.get(audio.label, CONFIDENCE_ALERT)
 
-    if audio.confidence >= CONFIDENCE_ALERT:
+    if audio.confidence >= threshold:
         return Decision(
             send_drone=True,
             send_lora=True,
