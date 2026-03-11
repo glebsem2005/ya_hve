@@ -1156,7 +1156,13 @@
 
         function startMic() {
             var btn = document.getElementById('btn-mic');
-            navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+            navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                }
+            }).then(function(stream) {
                 micStream = stream;
                 micRecording = true;
                 btn.classList.add('live-active');

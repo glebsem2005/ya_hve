@@ -395,6 +395,15 @@ async def check_permit(req: PermitCheck):
 
 from cloud.agent.rag_agent import query_rag, query_rag_enriched, IncidentContext
 
+CLASS_FALLBACK_ARTICLES = {
+    "chainsaw": "Ст. 260 УК РФ (ч. 1-3), ст. 8.28 КоАП РФ, ст. 96 ЛК РФ",
+    "axe": "Ст. 260 УК РФ (ч. 1-3), ст. 8.28 КоАП РФ, ст. 96 ЛК РФ",
+    "gunshot": "Ст. 258 УК РФ, ст. 8.35 КоАП РФ",
+    "fire": "Ст. 261 УК РФ, ст. 8.32 КоАП РФ",
+    "engine": "Ст. 8.25 КоАП РФ, ст. 96 ЛК РФ",
+}
+DEFAULT_FALLBACK_ARTICLES = "Ст. 260 УК РФ, ст. 8.28 КоАП РФ, ст. 96 ЛК РФ"
+
 
 class RagQueryRequest(BaseModel):
     question: str
@@ -446,9 +455,12 @@ async def rag_query_endpoint(req: RagQueryRequest):
             )
     except asyncio.TimeoutError:
         logger.warning("RAG query timed out after 25s")
+        articles = CLASS_FALLBACK_ARTICLES.get(
+            req.audio_class, DEFAULT_FALLBACK_ARTICLES
+        )
         answer = (
             "Превышено время ожидания ответа от YandexGPT.\n\n"
-            "## ПРАВОВАЯ БАЗА\nСт. 260 УК РФ, ст. 8.28 КоАП РФ, ст. 96 ЛК РФ\n\n"
+            f"## ПРАВОВАЯ БАЗА\n{articles}\n\n"
             "## КВАЛИФИКАЦИЯ\nТребуется детальный анализ после восстановления связи с YandexGPT.\n\n"
             "## ДЕЙСТВИЯ ИНСПЕКТОРА\n"
             "1. Оцените обстановку, не приближайтесь в одиночку\n"
@@ -835,7 +847,19 @@ async def live_audio(file: UploadFile):
         f.write(content)
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", webm_path, "-ar", "16000", "-ac", "1", wav_path],
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                webm_path,
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "-af",
+                "highpass=f=100",
+                wav_path,
+            ],
             capture_output=True,
             timeout=10,
         )
