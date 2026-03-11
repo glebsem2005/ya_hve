@@ -25,6 +25,9 @@ MODEL_PATH = os.environ.get(
 YAMNET_CLASS_MAP = {
     "Chainsaw": "chainsaw",
     "Power tool": "chainsaw",
+    "Sawing": "chainsaw",
+    "Drill": "chainsaw",
+    "Tools": "chainsaw",
     "Gunshot": "gunshot",
     "Gunfire": "gunshot",
     "Firearms": "gunshot",

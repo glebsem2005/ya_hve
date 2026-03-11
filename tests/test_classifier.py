@@ -289,3 +289,28 @@ class TestClassifyNormalization:
         passed_waveform = captured_waveforms[0]
         # After normalization, peak should be ≈ 1.0
         assert np.max(np.abs(passed_waveform)) == pytest.approx(1.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# YAMNET_CLASS_MAP — expanded mappings
+# ---------------------------------------------------------------------------
+
+
+class TestClassMapExpanded:
+    def test_class_map_sawing_maps_to_chainsaw(self) -> None:
+        """'Sawing' AudioSet class should map to 'chainsaw'."""
+        from edge.audio.classifier import YAMNET_CLASS_MAP
+
+        assert YAMNET_CLASS_MAP.get("Sawing") == "chainsaw"
+
+    def test_class_map_drill_maps_to_chainsaw(self) -> None:
+        """'Drill' AudioSet class should map to 'chainsaw'."""
+        from edge.audio.classifier import YAMNET_CLASS_MAP
+
+        assert YAMNET_CLASS_MAP.get("Drill") == "chainsaw"
+
+    def test_class_map_tools_maps_to_chainsaw(self) -> None:
+        """'Tools' AudioSet class should map to 'chainsaw'."""
+        from edge.audio.classifier import YAMNET_CLASS_MAP
+
+        assert YAMNET_CLASS_MAP.get("Tools") == "chainsaw"
