@@ -178,52 +178,64 @@ CREATE TABLE microphones (
 """
 
 
+_ensure_tables_started = False
+
+
 def ensure_tables() -> None:
-    """Create all tables if they don't exist.
+    """Create all tables if they don't exist (runs once, in background thread).
 
-    Silently skips tables that are already present (catches SchemeError).
-    Also runs ALTER TABLE migrations for existing incidents tables.
-    Includes retry logic and throttling for YDB rate limits.
+    Safe to call multiple times — only the first call starts the background
+    work.  Never blocks the caller, so module imports stay fast.
     """
-    import time
+    global _ensure_tables_started
+    if _ensure_tables_started:
+        return
+    _ensure_tables_started = True
 
-    try:
-        import ydb
-    except ImportError:
-        logger.error("ydb package not installed -- cannot ensure tables")
-        raise
+    import threading
 
-    try:
-        pool = get_pool()
-        for ddl in [DDL_RANGERS, DDL_PERMITS, DDL_INCIDENTS, DDL_MICROPHONES]:
-            for attempt in range(3):
-                try:
-                    pool.retry_operation_sync(
-                        lambda s, _ddl=ddl: s.execute_scheme(_ddl)
-                    )
-                    break
-                except ydb.SchemeError:
-                    break  # table already exists
-                except Exception:
-                    if attempt < 2:
-                        time.sleep(2)
-            time.sleep(0.5)  # throttle between DDL ops
+    def _run():
+        import time
 
-        # Migrate existing incidents table — add new columns
-        for alter in _ALTER_INCIDENTS:
-            for attempt in range(3):
-                try:
-                    pool.retry_operation_sync(
-                        lambda s, _alt=alter: s.execute_scheme(_alt)
-                    )
-                    break
-                except ydb.SchemeError:
-                    break  # column already exists
-                except Exception:
-                    if attempt < 2:
-                        time.sleep(2)
-            time.sleep(0.5)
+        try:
+            import ydb
+        except ImportError:
+            logger.error("ydb package not installed -- cannot ensure tables")
+            return
 
-        logger.info("YDB tables ensured")
-    except Exception as exc:
-        logger.error("Failed to ensure YDB tables: %s", exc)
+        try:
+            pool = get_pool()
+            for ddl in [DDL_RANGERS, DDL_PERMITS, DDL_INCIDENTS, DDL_MICROPHONES]:
+                for attempt in range(3):
+                    try:
+                        pool.retry_operation_sync(
+                            lambda s, _ddl=ddl: s.execute_scheme(_ddl)
+                        )
+                        break
+                    except ydb.SchemeError:
+                        break  # table already exists
+                    except Exception:
+                        if attempt < 2:
+                            time.sleep(2)
+                time.sleep(0.5)  # throttle between DDL ops
+
+            # Migrate existing incidents table — add new columns
+            for alter in _ALTER_INCIDENTS:
+                for attempt in range(3):
+                    try:
+                        pool.retry_operation_sync(
+                            lambda s, _alt=alter: s.execute_scheme(_alt)
+                        )
+                        break
+                    except ydb.SchemeError:
+                        break  # column already exists
+                    except Exception:
+                        if attempt < 2:
+                            time.sleep(2)
+                time.sleep(0.5)
+
+            logger.info("YDB tables ensured")
+        except Exception as exc:
+            logger.error("Failed to ensure YDB tables: %s", exc)
+
+    threading.Thread(target=_run, daemon=True).start()

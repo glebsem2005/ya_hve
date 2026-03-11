@@ -24,14 +24,16 @@ class YDBPermitRepository(PermitRepository):
     def __init__(self) -> None:
         from cloud.db.ydb_client import ensure_tables
 
-        try:
-            ensure_tables()
-            self._sync_next_id()
-        except Exception as exc:
-            logger.warning("YDB init failed, operations may fail: %s", exc)
+        ensure_tables()  # non-blocking: runs in background thread
+        # _sync_next_id deferred to first add_permit call
+
+    _id_synced: bool = False
 
     def _sync_next_id(self) -> None:
         """Read max existing ID from YDB so we don't collide."""
+        if self._id_synced:
+            return
+        self._id_synced = True
         global _next_permit_id
         from cloud.db.ydb_client import get_pool
 
@@ -73,6 +75,7 @@ class YDBPermitRepository(PermitRepository):
         valid_until: date,
         description: str = "",
     ) -> Permit:
+        self._sync_next_id()
         global _next_permit_id
         from cloud.db.ydb_client import get_pool
 

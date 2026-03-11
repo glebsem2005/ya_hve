@@ -63,10 +63,7 @@ class YDBIncidentRepository(IncidentRepository):
     def __init__(self) -> None:
         from cloud.db.ydb_client import ensure_tables
 
-        try:
-            ensure_tables()
-        except Exception as exc:
-            logger.warning("YDB init failed, operations may fail: %s", exc)
+        ensure_tables()  # non-blocking: runs in background thread
 
     # ------------------------------------------------------------------
     # write

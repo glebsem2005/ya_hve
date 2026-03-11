@@ -35,6 +35,7 @@ async def _post_init(application: Application) -> None:
                 BotCommand("rangers", "Список инспекторов (админ)"),
             ]
         )
+        logger.warning("Bot commands set OK")
     except Exception as e:
         logger.warning("Failed to set bot commands: %s", e)
 
@@ -45,6 +46,7 @@ async def _post_init(application: Application) -> None:
                 web_app=WebAppInfo(url="https://faun-forrest.duckdns.org/"),
             )
         )
+        logger.warning("Menu button set OK")
     except Exception as e:
         logger.warning("Failed to set menu button: %s", e)
 
@@ -88,7 +90,7 @@ def build_application() -> Application:
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
 
-    app = Application.builder().token(token).post_init(_post_init).build()
+    app = Application.builder().token(token).build()
     for handler in get_handlers():
         app.add_handler(handler)
     app.add_error_handler(_error_handler)
@@ -99,13 +101,20 @@ async def start_bot() -> None:
     global _application
     _application = build_application()
     await _application.initialize()
+    await _post_init(_application)
     await _application.start()
     await _application.updater.start_polling(drop_pending_updates=True)
 
     # Schedule stale incident cleanup every 5 minutes
-    _application.job_queue.run_repeating(
-        _cleanup_stale_incidents, interval=300, first=60
-    )
+    if _application.job_queue:
+        _application.job_queue.run_repeating(
+            _cleanup_stale_incidents, interval=300, first=60
+        )
+    else:
+        logger.warning(
+            "JobQueue not available — stale incident cleanup disabled. "
+            "Install python-telegram-bot[job-queue] to enable."
+        )
 
     logger.warning("Telegram bot polling started")
 
