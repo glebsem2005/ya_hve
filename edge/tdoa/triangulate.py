@@ -1,3 +1,5 @@
+from itertools import combinations
+
 import numpy as np
 from scipy.optimize import minimize
 from scipy.fft import rfft, irfft
@@ -134,101 +136,75 @@ def triangulate(
         in the cost function.  0.0 = pure TDOA, 1.0 = equal weight.
         Default 0.3 (TDOA dominates, distance adds soft constraint).
     """
-    assert len(signals) == 3 and len(mic_positions) == 3
-
-    mic_a, mic_b, mic_c = mic_positions
-    sig_a, sig_b, sig_c = signals
+    n = len(signals)
+    assert n >= 3 and len(mic_positions) == n
 
     # Temperature-corrected speed of sound (if provided)
     speed = SPEED_OF_SOUND
     if temperature_c is not None:
         speed = 331.3 + 0.606 * temperature_c
 
-    lat0, lon0 = mic_a.lat, mic_a.lon
-
-    bx, by = _latlon_to_meters(lat0, lon0, mic_b.lat, mic_b.lon)
-    cx, cy = _latlon_to_meters(lat0, lon0, mic_c.lat, mic_c.lon)
-
-    mics_m = np.array([[0, 0], [bx, by], [cx, cy]])
+    # Convert all mic positions to metres relative to mic 0
+    lat0, lon0 = mic_positions[0].lat, mic_positions[0].lon
+    mics_m = np.zeros((n, 2))
+    for i in range(1, n):
+        mics_m[i] = _latlon_to_meters(
+            lat0, lon0, mic_positions[i].lat, mic_positions[i].lon
+        )
 
     # Apply bandpass filter to improve cross-correlation quality
     if use_bandpass:
-        sig_a = _bandpass_filter(sig_a, sample_rate)
-        sig_b = _bandpass_filter(sig_b, sample_rate)
-        sig_c = _bandpass_filter(sig_c, sample_rate)
+        signals = [_bandpass_filter(s, sample_rate) for s in signals]
 
-    # Compute ALL 3 TDOA pairs for overdetermined system
-    tdoa_ab = _estimate_tdoa(sig_a, sig_b, sample_rate)
-    tdoa_ac = _estimate_tdoa(sig_a, sig_c, sample_rate)
-    tdoa_bc = _estimate_tdoa(sig_b, sig_c, sample_rate)
-
-    d_ab = tdoa_ab * speed
-    d_ac = tdoa_ac * speed
-    d_bc = tdoa_bc * speed
+    # Compute TDOA for all C(N,2) pairs — overdetermined system
+    pairs = list(combinations(range(n), 2))
+    tdoa_diffs = [
+        _estimate_tdoa(signals[i], signals[j], sample_rate) * speed for i, j in pairs
+    ]
 
     # SNR-based weights: higher SNR pairs get more influence
-    snr_a = _signal_snr(sig_a)
-    snr_b = _signal_snr(sig_b)
-    snr_c = _signal_snr(sig_c)
-    # Weight for each pair = arithmetic mean of the two mics' SNR
-    w_ab = max(1.0, (snr_a + snr_b) / 2.0)
-    w_ac = max(1.0, (snr_a + snr_c) / 2.0)
-    w_bc = max(1.0, (snr_b + snr_c) / 2.0)
+    snrs = [_signal_snr(s) for s in signals]
+    pair_weights = [max(1.0, (snrs[i] + snrs[j]) / 2.0) for i, j in pairs]
 
     # Energy-based distance estimates (inverse-square law)
-    dist_estimates = estimate_distances(
-        [sig_a, sig_b, sig_c],
-        [snr_a, snr_b, snr_c],
-        zone_type=zone_type,
-    )
-    est_da = dist_estimates[0].distance_m
-    est_db = dist_estimates[1].distance_m
-    est_dc = dist_estimates[2].distance_m
-    # Per-mic confidence weights for distance constraints
-    conf_a = dist_estimates[0].confidence
-    conf_b = dist_estimates[1].confidence
-    conf_c = dist_estimates[2].confidence
+    dist_estimates = estimate_distances(signals, snrs, zone_type=zone_type)
+    est_dists = [de.distance_m for de in dist_estimates]
+    confs = [de.confidence for de in dist_estimates]
 
     # Normalisation factors so that distance_weight actually controls the balance.
     # Without this, SNR-based TDOA weights (~40 dB) dwarf distance confidence (~0.4),
     # making distance_weight meaningless.
-    w_tdoa_sum = w_ab + w_ac + w_bc + 1e-10
-    w_dist_sum = conf_a + conf_b + conf_c + 1e-10
+    w_tdoa_sum = sum(pair_weights) + 1e-10
+    w_dist_sum = sum(confs) + 1e-10
 
     def cost(pos):
         x, y = pos
-        da = np.sqrt(x**2 + y**2)
-        db = np.sqrt((x - bx) ** 2 + (y - by) ** 2)
-        dc = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+        dists = np.sqrt((x - mics_m[:, 0]) ** 2 + (y - mics_m[:, 1]) ** 2)
 
-        # TDOA constraints (difference of distances)
-        # _estimate_tdoa(a, b) > 0 means B is farther, i.e. TDOA = (dist_B - dist_A) / speed
-        err_ab = (db - da) - d_ab
-        err_ac = (dc - da) - d_ac
-        err_bc = (dc - db) - d_bc
+        # TDOA constraints (difference of distances between mic pairs)
         tdoa_cost = (
-            w_ab * err_ab**2 + w_ac * err_ac**2 + w_bc * err_bc**2
-        ) / w_tdoa_sum
+            sum(
+                pair_weights[k] * ((dists[j] - dists[i]) - tdoa_diffs[k]) ** 2
+                for k, (i, j) in enumerate(pairs)
+            )
+            / w_tdoa_sum
+        )
 
         # Distance constraints (absolute distance to each mic)
-        derr_a = (da - est_da) ** 2
-        derr_b = (db - est_db) ** 2
-        derr_c = (dc - est_dc) ** 2
-        dist_cost = (conf_a * derr_a + conf_b * derr_b + conf_c * derr_c) / w_dist_sum
+        dist_cost = (
+            sum(confs[k] * (dists[k] - est_dists[k]) ** 2 for k in range(n))
+            / w_dist_sum
+        )
 
         return tdoa_cost + distance_weight * dist_cost
 
-    # Multi-start optimization: try centroid + each mic position as initial guess
+    # Multi-start optimization: centroid + each mic position + outside point
     centroid_x = mics_m[:, 0].mean()
     centroid_y = mics_m[:, 1].mean()
 
-    initial_guesses = [
-        [centroid_x, centroid_y],
-        [0.0, 0.0],  # near mic A
-        [bx, by],  # near mic B
-        [cx, cy],  # near mic C
-        [centroid_x * 2, centroid_y * 2],  # outside triangle
-    ]
+    initial_guesses = [[centroid_x, centroid_y]]
+    initial_guesses.extend([mics_m[i, 0], mics_m[i, 1]] for i in range(n))
+    initial_guesses.append([centroid_x * 2, centroid_y * 2])
 
     best_result = None
     best_cost = float("inf")
@@ -247,6 +223,17 @@ def triangulate(
     src_x, src_y = best_result.x
     src_lat, src_lon = _meters_to_latlon(lat0, lon0, src_x, src_y)
 
-    error_m = float(np.sqrt(best_result.fun)) if best_result.fun > 0 else 0.0
+    # error_m: RMS of unweighted TDOA residuals (metres)
+    # Measures how well the solution explains the observed TDOAs
+    dists_at_solution = np.sqrt(
+        (src_x - mics_m[:, 0]) ** 2 + (src_y - mics_m[:, 1]) ** 2
+    )
+    tdoa_residuals = np.array(
+        [
+            (dists_at_solution[j] - dists_at_solution[i]) - tdoa_diffs[k]
+            for k, (i, j) in enumerate(pairs)
+        ]
+    )
+    error_m = float(np.sqrt(np.mean(tdoa_residuals**2)))
 
     return TriangulationResult(lat=src_lat, lon=src_lon, error_m=error_m)

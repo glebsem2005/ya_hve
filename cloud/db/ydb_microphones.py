@@ -207,7 +207,7 @@ class YDBMicrophoneRepository(MicrophoneRepository):
 
         return mics
 
-    def get_online(self, limit: int = 100) -> list[Microphone]:
+    def get_online(self, limit: int = 2000) -> list[Microphone]:
         from cloud.db.ydb_client import get_pool
 
         pool = get_pool()

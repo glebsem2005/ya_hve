@@ -295,9 +295,7 @@ class TestTriangulate:
         err = _loc_error_m(triangle_mics, result, source)
         assert err < 15.0, f"Near mic_a source: error {err:.1f} m (want <15 m)"
 
-    def test_source_outside_triangle(
-        self, triangle_mics: list[MicPosition]
-    ) -> None:
+    def test_source_outside_triangle(self, triangle_mics: list[MicPosition]) -> None:
         """Source 150 m away, outside the triangle — harder case, <40 m tolerance."""
         lat0, lon0 = triangle_mics[0].lat, triangle_mics[0].lon
         mics_xy = [(0.0, 0.0)]
@@ -310,11 +308,14 @@ class TestTriangulate:
         err = _loc_error_m(triangle_mics, result, source)
         assert err < 40.0, f"Outside source: error {err:.1f} m (want <40 m)"
 
-    @pytest.mark.parametrize("source_xy,label", [
-        ((30.0, 50.0), "inside-NE"),
-        ((-40.0, -10.0), "outside-SW"),
-        ((80.0, 0.0), "east-far"),
-    ])
+    @pytest.mark.parametrize(
+        "source_xy,label",
+        [
+            ((30.0, 50.0), "inside-NE"),
+            ((-40.0, -10.0), "outside-SW"),
+            ((80.0, 0.0), "east-far"),
+        ],
+    )
     def test_multiple_source_positions(
         self, triangle_mics: list[MicPosition], source_xy: tuple, label: str
     ) -> None:
@@ -324,10 +325,14 @@ class TestTriangulate:
         for m in triangle_mics[1:]:
             mics_xy.append(_latlon_to_meters(lat0, lon0, m.lat, m.lon))
 
-        signals = _simulate_source(source_xy, mics_xy, snr_db=35, seed=hash(label) % 2**31)
+        signals = _simulate_source(
+            source_xy, mics_xy, snr_db=35, seed=hash(label) % 2**31
+        )
         result = triangulate(signals, triangle_mics, sample_rate=16000)
         err = _loc_error_m(triangle_mics, result, source_xy)
-        assert err < 30.0, f"Source '{label}' at {source_xy}: error {err:.1f} m (want <30 m)"
+        assert err < 30.0, (
+            f"Source '{label}' at {source_xy}: error {err:.1f} m (want <30 m)"
+        )
 
     def test_noisy_signal_degrades_gracefully(
         self, triangle_mics: list[MicPosition]
@@ -429,8 +434,12 @@ class TestFusion:
         errors_fused = []
         for i, src in enumerate(sources):
             signals = _simulate_source(src, mics_xy, snr_db=30, seed=100 + i)
-            r_pure = triangulate(signals, triangle_mics, sample_rate=16000, distance_weight=0.0)
-            r_fused = triangulate(signals, triangle_mics, sample_rate=16000, distance_weight=0.3)
+            r_pure = triangulate(
+                signals, triangle_mics, sample_rate=16000, distance_weight=0.0
+            )
+            r_fused = triangulate(
+                signals, triangle_mics, sample_rate=16000, distance_weight=0.3
+            )
             errors_pure.append(_loc_error_m(triangle_mics, r_pure, src))
             errors_fused.append(_loc_error_m(triangle_mics, r_fused, src))
 
@@ -446,12 +455,22 @@ class TestFusion:
     ) -> None:
         """Fusion should not make ANY scenario significantly worse (>50% degradation)."""
         mics_xy = self._mics_xy(triangle_mics)
-        sources = [(30.0, 50.0), (-40.0, 20.0), (10.0, 10.0), (70.0, -20.0), (0.0, 80.0)]
+        sources = [
+            (30.0, 50.0),
+            (-40.0, 20.0),
+            (10.0, 10.0),
+            (70.0, -20.0),
+            (0.0, 80.0),
+        ]
 
         for i, src in enumerate(sources):
             signals = _simulate_source(src, mics_xy, snr_db=30, seed=200 + i)
-            r_pure = triangulate(signals, triangle_mics, sample_rate=16000, distance_weight=0.0)
-            r_fused = triangulate(signals, triangle_mics, sample_rate=16000, distance_weight=0.3)
+            r_pure = triangulate(
+                signals, triangle_mics, sample_rate=16000, distance_weight=0.0
+            )
+            r_fused = triangulate(
+                signals, triangle_mics, sample_rate=16000, distance_weight=0.3
+            )
             e_pure = _loc_error_m(triangle_mics, r_pure, src)
             e_fused = _loc_error_m(triangle_mics, r_fused, src)
             assert e_fused < e_pure * 1.5 + 5.0, (
@@ -522,6 +541,135 @@ class TestFusion:
         mics_xy = self._mics_xy(triangle_mics)
         source = (30.0, 40.0)
         signals = _simulate_source(source, mics_xy, snr_db=35, seed=500)
-        result = triangulate(signals, triangle_mics, sample_rate=16000, distance_weight=0.8)
+        result = triangulate(
+            signals, triangle_mics, sample_rate=16000, distance_weight=0.8
+        )
         err = _loc_error_m(triangle_mics, result, source)
         assert err < 50.0, f"High weight: error {err:.1f} m (want <50 m)"
+
+
+# ---------------------------------------------------------------------------
+# N-microphone triangulation (N > 3)
+# ---------------------------------------------------------------------------
+
+
+class TestTriangulateNMics:
+    """N-microphone triangulation (N > 3)."""
+
+    def test_accepts_6_signals(self, hexagon_mics: list[MicPosition]) -> None:
+        """triangulate() should accept 6 signals + 6 mic positions."""
+        signals = [
+            np.random.default_rng(i).normal(size=16000).astype(np.float32)
+            for i in range(6)
+        ]
+        result = triangulate(signals, hexagon_mics, sample_rate=16000)
+        assert isinstance(result, TriangulationResult)
+
+    def test_accepts_4_signals(self) -> None:
+        """triangulate() should accept 4 signals (square layout)."""
+        mics = [
+            MicPosition(lat=55.7510, lon=37.6130),
+            MicPosition(lat=55.7510, lon=37.6146),
+            MicPosition(lat=55.7519, lon=37.6130),
+            MicPosition(lat=55.7519, lon=37.6146),
+        ]
+        signals = [
+            np.random.default_rng(i).normal(size=16000).astype(np.float32)
+            for i in range(4)
+        ]
+        result = triangulate(signals, mics, sample_rate=16000)
+        assert isinstance(result, TriangulationResult)
+
+    def test_6mic_centroid_accuracy(self, hexagon_mics: list[MicPosition]) -> None:
+        """Source at centroid of 6 mics -> error < 15m."""
+        lat0, lon0 = hexagon_mics[0].lat, hexagon_mics[0].lon
+        mics_xy = [(0.0, 0.0)]
+        for m in hexagon_mics[1:]:
+            mics_xy.append(_latlon_to_meters(lat0, lon0, m.lat, m.lon))
+        centroid = (np.mean([p[0] for p in mics_xy]), np.mean([p[1] for p in mics_xy]))
+
+        signals = _simulate_source(centroid, mics_xy, snr_db=40, seed=600)
+        result = triangulate(signals, hexagon_mics, sample_rate=16000)
+        err = _loc_error_m(hexagon_mics, result, centroid)
+        assert err < 15.0, f"6-mic centroid: error {err:.1f} m (want <15 m)"
+
+    def test_rejects_2_signals(self) -> None:
+        """2 signals should raise AssertionError."""
+        mics = [MicPosition(lat=55.75, lon=37.61), MicPosition(lat=55.76, lon=37.62)]
+        signals = [np.zeros(16000, dtype=np.float32) for _ in range(2)]
+        with pytest.raises(AssertionError):
+            triangulate(signals, mics, sample_rate=16000)
+
+    def test_mismatched_lengths(self, hexagon_mics: list[MicPosition]) -> None:
+        """5 signals + 6 mics -> AssertionError."""
+        signals = [np.zeros(16000, dtype=np.float32) for _ in range(5)]
+        with pytest.raises(AssertionError):
+            triangulate(signals, hexagon_mics)
+
+    def test_6mic_outside_source(self, hexagon_mics: list[MicPosition]) -> None:
+        """Source outside hexagon — should still converge within 40 m."""
+        lat0, lon0 = hexagon_mics[0].lat, hexagon_mics[0].lon
+        mics_xy = [(0.0, 0.0)]
+        for m in hexagon_mics[1:]:
+            mics_xy.append(_latlon_to_meters(lat0, lon0, m.lat, m.lon))
+
+        source = (-150.0, 100.0)
+        signals = _simulate_source(source, mics_xy, snr_db=35, seed=601)
+        result = triangulate(signals, hexagon_mics, sample_rate=16000)
+        err = _loc_error_m(hexagon_mics, result, source)
+        assert err < 100.0, f"6-mic outside: error {err:.1f} m (want <100 m)"
+
+    def test_backward_compat_3_mics(self, triangle_mics: list[MicPosition]) -> None:
+        """3 mics should still work after N-mic generalization."""
+        lat0, lon0 = triangle_mics[0].lat, triangle_mics[0].lon
+        mics_xy = [(0.0, 0.0)]
+        for m in triangle_mics[1:]:
+            mics_xy.append(_latlon_to_meters(lat0, lon0, m.lat, m.lon))
+        centroid = (np.mean([p[0] for p in mics_xy]), np.mean([p[1] for p in mics_xy]))
+
+        signals = _simulate_source(centroid, mics_xy, snr_db=40, seed=7)
+        result = triangulate(signals, triangle_mics, sample_rate=16000)
+        err = _loc_error_m(triangle_mics, result, centroid)
+        assert err < 15.0, f"3-mic backward compat: error {err:.1f} m (want <15 m)"
+
+
+# ---------------------------------------------------------------------------
+# error_m quality — TDOA residual metric
+# ---------------------------------------------------------------------------
+
+
+class TestErrorMetric:
+    """Tests that error_m reflects real TDOA residuals, not multi-start spread."""
+
+    def test_error_m_nonzero(self, triangle_mics: list[MicPosition]) -> None:
+        """error_m must be > 0 for any realistic scenario (not ±0.0)."""
+        lat0, lon0 = triangle_mics[0].lat, triangle_mics[0].lon
+        mics_xy = [(0.0, 0.0)]
+        for m in triangle_mics[1:]:
+            mics_xy.append(_latlon_to_meters(lat0, lon0, m.lat, m.lon))
+
+        source = (30.0, 50.0)
+        signals = _simulate_source(source, mics_xy, snr_db=40, seed=77)
+        result = triangulate(signals, triangle_mics, sample_rate=16000)
+        assert result.error_m > 0.001, (
+            f"error_m should reflect real TDOA residuals (>1 mm), got {result.error_m}"
+        )
+
+    def test_error_m_scales_with_noise(self, triangle_mics: list[MicPosition]) -> None:
+        """error_m should increase when noise is added (lower SNR)."""
+        lat0, lon0 = triangle_mics[0].lat, triangle_mics[0].lon
+        mics_xy = [(0.0, 0.0)]
+        for m in triangle_mics[1:]:
+            mics_xy.append(_latlon_to_meters(lat0, lon0, m.lat, m.lon))
+
+        source = (30.0, 50.0)
+        signals_clean = _simulate_source(source, mics_xy, snr_db=40, seed=88)
+        signals_noisy = _simulate_source(source, mics_xy, snr_db=10, seed=88)
+
+        result_clean = triangulate(signals_clean, triangle_mics, sample_rate=16000)
+        result_noisy = triangulate(signals_noisy, triangle_mics, sample_rate=16000)
+
+        assert result_noisy.error_m > result_clean.error_m, (
+            f"Noisy error_m ({result_noisy.error_m:.2f}) should be > "
+            f"clean error_m ({result_clean.error_m:.2f})"
+        )
