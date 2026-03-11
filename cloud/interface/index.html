@@ -852,12 +852,17 @@
             return frag;
         }
 
-        function buildProtocol() {
+        function buildProtocol(incidentId) {
             var a = document.createElement('a');
             a.className = 'proto-link';
-            a.href = '#';
-            a.textContent = 'Проект протокола PDF (через Telegram-бот @ya_faun_bot)';
-            a.addEventListener('click', function(e) { e.preventDefault(); });
+            if (incidentId) {
+                a.href = '/api/v1/incidents/' + incidentId + '/protocol.pdf';
+                a.textContent = 'Скачать протокол PDF';
+            } else {
+                a.href = '#';
+                a.textContent = 'Протокол PDF (ID инцидента недоступен)';
+                a.addEventListener('click', function(e) { e.preventDefault(); });
+            }
             return a;
         }
 
@@ -1004,8 +1009,9 @@
 
                 case 'alert_sent': {
                     incident.alertText = d.text;
+                    incident.id = d.incident_id;
                     addSection('alert', 'YANDEXGPT', buildAlert(d));
-                    addSection('protocol', '', buildProtocol());
+                    addSection('protocol', '', buildProtocol(incident.id));
                     logEvent('АЛЕРТ', 'отправлен', 'high');
                     break;
                 }

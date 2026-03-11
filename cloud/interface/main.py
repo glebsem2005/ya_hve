@@ -1079,7 +1079,12 @@ async def _run_demo(
     # Store drone photo in incident (sent to ranger after accept)
     await deps["send_confirmed"](alert, photo.data, incident=incident)
     await broadcast(
-        {"event": "alert_sent", "text": alert.text, "priority": alert.priority}
+        {
+            "event": "alert_sent",
+            "text": alert.text,
+            "priority": alert.priority,
+            "incident_id": incident.id,
+        }
     )
     await drone.return_home()
     await broadcast({"event": "pipeline_end", "reason": "complete"})
