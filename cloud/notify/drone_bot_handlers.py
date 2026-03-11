@@ -195,6 +195,15 @@ async def drone_photo_handler(
         )
 
 
+async def drone_text_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle non-photo messages — hint to send a photo."""
+    await update.message.reply_text(
+        "Отправьте фото для анализа. Я принимаю только снимки."
+    )
+
+
 def get_drone_handlers() -> list:
     """Return all handlers for the Drone bot."""
     return [

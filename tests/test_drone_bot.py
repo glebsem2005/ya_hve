@@ -18,7 +18,11 @@ _mock_main_module.broadcast = AsyncMock()
 sys.modules["cloud.interface.main"] = _mock_main_module
 cloud.interface.main = _mock_main_module
 
-from cloud.notify.drone_bot_handlers import drone_start, drone_photo_handler
+from cloud.notify.drone_bot_handlers import (
+    drone_start,
+    drone_photo_handler,
+    drone_text_handler,
+)
 
 
 def _make_photo_update(chat_id: int):
@@ -436,3 +440,16 @@ class TestDroneBot:
 
         text = update.message.reply_text.call_args[0][0]
         assert "не удалось" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_text_message_replies_with_photo_hint(self):
+        """Non-photo text message must get a reply hinting to send a photo."""
+        update = MagicMock()
+        update.message.reply_text = AsyncMock()
+        update.message.text = "привет"
+
+        await drone_text_handler(update, MagicMock())
+
+        update.message.reply_text.assert_called_once()
+        text = update.message.reply_text.call_args[0][0]
+        assert "фото" in text.lower()
