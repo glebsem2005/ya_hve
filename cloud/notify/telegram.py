@@ -128,7 +128,12 @@ async def send_pending(
     level = gating_level or _gating_level(confidence)
 
     # Spatial deduplication: skip if a recent nearby incident exists
-    existing = get_recent_nearby_incident(lat, lon, radius_m=500, max_age_s=300)
+    # Skip dedup for broadcast (demo) alerts to avoid suppressing test events
+    existing = (
+        None
+        if broadcast
+        else get_recent_nearby_incident(lat, lon, radius_m=500, max_age_s=300)
+    )
     if existing:
         logger.info(
             "Dedup: incident %s already covers %.4f,%.4f — skipping",

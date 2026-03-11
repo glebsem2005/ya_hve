@@ -1226,6 +1226,7 @@ async def _run_demo(
                     decision.reason,
                     confidence=audio_result.confidence,
                     is_demo=True,
+                    broadcast=True,
                 )
                 await broadcast({"event": "pipeline_end", "reason": "verify_no_drone"})
             else:
@@ -1256,6 +1257,7 @@ async def _run_demo(
                 decision.reason,
                 confidence=audio_result.confidence,
                 is_demo=True,
+                broadcast=True,
             ),
         )
 
