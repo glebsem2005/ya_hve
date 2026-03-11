@@ -327,6 +327,33 @@ class TestVerdictCallback:
         assert "не найден" in text.lower()
 
     @pytest.mark.asyncio
+    async def test_confirmed_sends_evidence_request_via_reply(self, mock_bot):
+        """verdict:confirmed должен отправить reply_text с просьбой о фото."""
+        incident = _create_test_incident(status="on_site", chat_id=1050)
+
+        update = _make_callback_update(1050, f"verdict:confirmed:{incident.id}")
+        await verdict_callback(update, MagicMock())
+
+        update.callback_query.message.reply_text.assert_called_once()
+        reply_text = update.callback_query.message.reply_text.call_args[0][0]
+        assert "фото" in reply_text.lower()
+
+    @pytest.mark.asyncio
+    async def test_confirmed_works_when_answer_fails(self, mock_bot):
+        """query.answer() падает с NetworkError — flow НЕ должен падать."""
+        incident = _create_test_incident(status="on_site", chat_id=1060)
+
+        update = _make_callback_update(1060, f"verdict:confirmed:{incident.id}")
+        update.callback_query.answer = AsyncMock(
+            side_effect=Exception("httpx.ReadError: NetworkError")
+        )
+        await verdict_callback(update, MagicMock())
+
+        # edit_message_text и reply_text всё равно вызываются
+        update.callback_query.edit_message_text.assert_called_once()
+        update.callback_query.message.reply_text.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_malformed_data_no_crash(self):
         update = _make_callback_update(1300, "verdict:bad")
         await verdict_callback(update, MagicMock())

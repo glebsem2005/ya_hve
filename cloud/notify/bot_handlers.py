@@ -120,10 +120,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def _safe_answer(query) -> None:
+    """answer() just removes the loading spinner — non-critical."""
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
+
 async def district_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle inline button press — register ranger for chosen district."""
     query = update.callback_query
-    await query.answer()
+    await _safe_answer(query)
 
     data = query.data
     if not data.startswith("district:"):
@@ -228,7 +236,7 @@ async def test_alert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def accept_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle 'Принять вызов' button."""
     query = update.callback_query
-    await query.answer()
+    await _safe_answer(query)
 
     parts = query.data.split(":", 1)
     if len(parts) < 2:
@@ -378,7 +386,7 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def verdict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle 'Нарушение подтверждено' / 'Ложный вызов' buttons."""
     query = update.callback_query
-    await query.answer()
+    await _safe_answer(query)
 
     parts = query.data.split(":")
     if len(parts) < 3:
@@ -417,7 +425,9 @@ async def verdict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         # Stay on_site, wait for evidence
         await query.edit_message_text("Нарушение зафиксировано.")
-        await send_evidence_request(chat_id)
+        await query.message.reply_text(
+            "Пришлите фото нарушения и опишите ситуацию (текстом или голосовым сообщением)."
+        )
 
 
 # ---------- Voice handler ----------
@@ -638,7 +648,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def rag_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle RAG inline button callbacks (rag:action:... or rag:protocol:...)."""
     query = update.callback_query
-    await query.answer()
+    await _safe_answer(query)
 
     data = query.data
     parts = data.split(":")
@@ -812,7 +822,7 @@ async def confirm_reg_callback(
 ) -> None:
     """Handle confirm_reg:yes / confirm_reg:no buttons."""
     query = update.callback_query
-    await query.answer()
+    await _safe_answer(query)
 
     chat_id = query.message.chat_id
     reg = _registration_state.get(chat_id)
@@ -877,7 +887,7 @@ async def confirm_reg_callback(
 async def snooze_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle 'Отложить 15 мин' button — snooze alert and re-send later."""
     query = update.callback_query
-    await query.answer()
+    await _safe_answer(query)
 
     parts = query.data.split(":", 1)
     if len(parts) < 2:
