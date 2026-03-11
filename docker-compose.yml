@@ -13,11 +13,11 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
-      interval: 60s
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 120s
       timeout: 10s
-      retries: 5
-      start_period: 120s
+      retries: 3
+      start_period: 360s
 
   edge:
     build: .

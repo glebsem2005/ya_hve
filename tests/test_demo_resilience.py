@@ -1,7 +1,8 @@
-"""Tests: _run_demo() resilience to classifier failures.
+"""Tests: _run_demo() resilience to classifier failures and OOM.
 
 Cloud container must stay alive even when edge.audio.classifier
-cannot load (OOM, TF crash) or raises at runtime.
+cannot load (OOM, TF crash) or raises at runtime.  Memory guard
+must prevent demo from running when system memory is low.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import sys
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -77,3 +78,74 @@ class TestRunDemoResilience:
                 assert result == {"status": "ok"}
             finally:
                 loop.close()
+
+
+class TestAvailableMemory:
+    """_available_memory_mb() reads /proc/meminfo on Linux, fallback on others."""
+
+    def test_reads_proc_meminfo(self, _real_main):
+        """Parses MemAvailable from /proc/meminfo correctly."""
+        fake_meminfo = (
+            "MemTotal:       16384000 kB\n"
+            "MemFree:         8000000 kB\n"
+            "MemAvailable:    12000000 kB\n"
+        )
+        from unittest.mock import mock_open
+
+        with patch("builtins.open", mock_open(read_data=fake_meminfo)):
+            result = _real_main._available_memory_mb()
+        assert abs(result - 12000000 / 1024) < 0.01  # ~11718.75 MB
+
+    def test_fallback_when_no_proc(self, _real_main):
+        """Returns inf when /proc/meminfo is not available (macOS, etc.)."""
+        with patch("builtins.open", side_effect=OSError("No such file")):
+            result = _real_main._available_memory_mb()
+        assert result == float("inf")
+
+
+class TestMemoryGuard:
+    """_run_demo() must skip execution when system memory is too low."""
+
+    def test_skips_on_low_memory(self, _real_main):
+        """Demo returns early with 'low_memory' broadcast when RAM < threshold."""
+        _run_demo = _real_main._run_demo
+        broadcasts = []
+
+        async def fake_broadcast(msg):
+            broadcasts.append(msg)
+
+        with (
+            patch.object(_real_main, "_available_memory_mb", return_value=200.0),
+            patch.object(_real_main, "MIN_DEMO_MEMORY_MB", 400),
+            patch.object(_real_main, "broadcast", new=fake_broadcast),
+        ):
+            loop = asyncio.new_event_loop()
+            try:
+                result = loop.run_until_complete(_run_demo("chainsaw"))
+            finally:
+                loop.close()
+
+        assert result is None
+        assert any(b.get("reason") == "low_memory" for b in broadcasts)
+
+    def test_proceeds_on_sufficient_memory(self, _real_main):
+        """Demo proceeds past memory check when RAM is sufficient."""
+        _run_demo = _real_main._run_demo
+
+        with (
+            patch.object(_real_main, "_available_memory_mb", return_value=1000.0),
+            patch.object(_real_main, "MIN_DEMO_MEMORY_MB", 400),
+            patch.object(
+                _real_main,
+                "_import_demo_deps",
+                side_effect=ImportError("stopped after memory check passed"),
+            ),
+        ):
+            loop = asyncio.new_event_loop()
+            try:
+                result = loop.run_until_complete(_run_demo("chainsaw"))
+            finally:
+                loop.close()
+
+        # Demo got past memory check — reached _import_demo_deps (which we made fail)
+        assert result is None

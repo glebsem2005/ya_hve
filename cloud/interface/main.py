@@ -869,6 +869,21 @@ async def start_demo_legacy(scenario: str = "chainsaw"):
     return {"status": "started", "scenario": scenario}
 
 
+MIN_DEMO_MEMORY_MB = int(os.getenv("MIN_DEMO_MEMORY_MB", "400"))
+
+
+def _available_memory_mb() -> float:
+    """Available memory in MB. Reads /proc/meminfo (Linux), fallback: inf."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) / 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return float("inf")
+
+
 def _import_demo_deps():
     """Import heavy demo dependencies (TF, simulators). May raise ImportError/MemoryError."""
     from simulator.audio.mic_stream import MicSimulator
@@ -905,6 +920,16 @@ async def _run_demo(
     source_lat: float | None = None,
     source_lon: float | None = None,
 ):
+    avail = _available_memory_mb()
+    if avail < MIN_DEMO_MEMORY_MB:
+        logger.warning(
+            "Demo skipped: %.0f MB available < %d MB required",
+            avail,
+            MIN_DEMO_MEMORY_MB,
+        )
+        await broadcast({"event": "pipeline_end", "reason": "low_memory"})
+        return
+
     try:
         deps = _import_demo_deps()
     except Exception:
