@@ -38,3 +38,9 @@ def test_events_log_size(html):
     max_h = _css_px(html, r"\.events-log\s*\{[^}]*max-height:\s*(\d+)px")
     assert width >= 520, f"Events-log width {width}px too narrow (min 520px)"
     assert max_h >= 260, f"Events-log max-height {max_h}px too short (min 260px)"
+
+
+def test_events_log_font(html):
+    """Events log text must be at least 14px for readability."""
+    font = _css_px(html, r"\.ev-line\s*\{[^}]*font-size:\s*(\d+)px")
+    assert font >= 14, f"Events-log font {font}px too small (min 14px)"
