@@ -68,6 +68,7 @@ async def lifespan(app):
         await start_bot()
     except Exception:
         logger.exception("Failed to start Ranger bot polling")
+    logger.warning("Starting Drone bot...")
     try:
         await start_drone_bot()
     except Exception:
@@ -954,7 +955,7 @@ async def _run_demo(
         await broadcast({"event": "pipeline_end", "reason": "no_anomaly"})
         return
 
-    drone = SimulatedDrone(home_lat=home_lat, home_lon=home_lon)
+    drone = SimulatedDrone(home_lat=home_lat, home_lon=home_lon, scenario=scenario)
     await drone.takeoff()
 
     async def drone_task():

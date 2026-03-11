@@ -19,5 +19,8 @@ sa-key.json
 *.npz
 *.tflite
 
+# Demo drone photos (downloaded via demo/download_photos.py)
+demo/photos/
+
 # MkDocs build output
 site/

@@ -34,7 +34,7 @@ async def start_bot() -> None:
     await _application.initialize()
     await _application.start()
     await _application.updater.start_polling(drop_pending_updates=True)
-    logger.info("Telegram bot polling started")
+    logger.warning("Telegram bot polling started")
 
 
 async def stop_bot() -> None:
@@ -43,5 +43,5 @@ async def stop_bot() -> None:
         await _application.updater.stop()
         await _application.stop()
         await _application.shutdown()
-        logger.info("Telegram bot polling stopped")
+        logger.warning("Telegram bot polling stopped")
         _application = None

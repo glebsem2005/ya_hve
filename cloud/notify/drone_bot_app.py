@@ -33,7 +33,7 @@ async def start_drone_bot() -> None:
     await _application.initialize()
     await _application.start()
     await _application.updater.start_polling(drop_pending_updates=True)
-    logger.info("Drone bot polling started")
+    logger.warning("Drone bot polling started")
 
 
 async def stop_drone_bot() -> None:
@@ -42,5 +42,5 @@ async def stop_drone_bot() -> None:
         await _application.updater.stop()
         await _application.stop()
         await _application.shutdown()
-        logger.info("Drone bot polling stopped")
+        logger.warning("Drone bot polling stopped")
         _application = None
