@@ -102,3 +102,18 @@ class TestParseResult:
         )
         result = _parse_result(raw)
         assert result.is_threat is True
+
+    def test_parse_result_machinery_forces_threat(self):
+        """Safety net: has_machinery=True must force is_threat=True even without humans."""
+        raw = json.dumps(
+            {
+                "description": "Лесозаготовительные работы в хвойном лесу. Видна тяжелая техника.",
+                "has_human": False,
+                "has_fire": False,
+                "has_felling": True,
+                "has_machinery": True,
+                "is_threat": False,  # LLM said no threat — safety net must override
+            }
+        )
+        result = _parse_result(raw)
+        assert result.is_threat is True

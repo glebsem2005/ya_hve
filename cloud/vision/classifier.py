@@ -52,10 +52,13 @@ def _parse_result(raw: str) -> VisionResult:
     has_fire = data.get("has_fire", False)
     is_threat = data.get("is_threat", False)
 
-    # Safety net: human + felling/fire/tools → always a threat
+    # Safety net: override LLM when obvious threat signals present
+    has_machinery = data.get("has_machinery", False)
     description = data.get("description") or ""
     _TOOL_KEYWORDS = ("топор", "бензопил", "пила", "ружь", "винтовк", "оружи")
     desc_has_tool = any(kw in description.lower() for kw in _TOOL_KEYWORDS)
+    if has_machinery:
+        is_threat = True
     if has_human and (has_felling or has_fire or desc_has_tool):
         is_threat = True
 
@@ -64,7 +67,7 @@ def _parse_result(raw: str) -> VisionResult:
         has_human=has_human,
         has_fire=has_fire,
         has_felling=has_felling,
-        has_machinery=data.get("has_machinery", False),
+        has_machinery=has_machinery,
         is_threat=is_threat,
     )
 
