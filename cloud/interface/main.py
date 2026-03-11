@@ -1167,18 +1167,17 @@ async def _run_demo(
 
         audio_result = deps["classify"](audio_paths[0])
 
-        # Demo override: synthetic demo files are too quiet for v7 head model.
-        # Force expected class so the demo pipeline always completes.
-        if audio_result.label in ("background", "unknown") and scenario in (
-            "chainsaw",
-            "gunshot",
-            "engine",
-            "axe",
+        if audio_result.label in ("background", "unknown") and scenario not in (
+            "normal",
+            "silence",
         ):
-            audio_result = AudioResult(
-                label=scenario,
-                confidence=0.85,
-                raw_scores={scenario: 0.85, "background": 0.15},
+            logger.warning(
+                "Classifier returned '%s' for demo scenario '%s' "
+                "(confidence=%.2f, scores=%s)",
+                audio_result.label,
+                scenario,
+                audio_result.confidence,
+                audio_result.raw_scores,
             )
 
         await broadcast(
