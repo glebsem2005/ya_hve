@@ -395,7 +395,6 @@ async def classify_cloud(req: ClassifyRequest):
 # ---- DataLens: incidents export ----
 
 from fastapi.responses import PlainTextResponse
-from cloud.analytics.datalens import get_datalens_incidents
 
 
 @app.get("/api/v1/incidents/export", response_class=PlainTextResponse)
@@ -403,6 +402,8 @@ async def export_incidents_csv():
     """Export incidents as CSV for DataLens integration."""
     import csv
     import io
+
+    from cloud.analytics.datalens import get_datalens_incidents
 
     rows = get_datalens_incidents()
     if not rows:
@@ -588,19 +589,13 @@ async def update_mic_battery(mic_uid: str, req: MicBatteryUpdate):
 
 # ---- DataLens JSON endpoints ----
 
-from cloud.analytics.datalens import get_datalens_incidents, get_datalens_stats
-
 
 @app.get("/api/v1/datalens/incidents")
 async def datalens_incidents():
     """JSON incidents data for DataLens API connector."""
+    from cloud.analytics.datalens import get_datalens_incidents
+
     return get_datalens_incidents()
-
-
-@app.get("/api/v1/datalens/stats")
-async def datalens_stats():
-    """Aggregated statistics for DataLens dashboard."""
-    return get_datalens_stats()
 
 
 # ---- Classification agent ----

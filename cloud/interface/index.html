@@ -298,122 +298,6 @@
         }
         .proto-link:hover { color: #888; }
 
-        /* ---- Stats page ---- */
-        .stats-page {
-            flex-direction: column;
-            overflow-y: auto;
-            padding: 20px 24px;
-            width: 100%;
-        }
-        .stats-kpi {
-            display: flex;
-            gap: 16px;
-            margin-bottom: 24px;
-            flex-wrap: wrap;
-        }
-        .kpi-card {
-            flex: 1;
-            min-width: 140px;
-            padding: 16px;
-            background: #0d0d14;
-            border: 1px solid #1a1e2a;
-            border-radius: 2px;
-            text-align: center;
-        }
-        .kpi-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #e0e0e8;
-        }
-        .kpi-value.alert { color: #ff2020; }
-        .kpi-value.ok { color: #00ff41; }
-        .kpi-value.warn { color: #ffaa00; }
-        .kpi-label {
-            font-size: 10px;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            color: #555;
-            margin-top: 6px;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 24px;
-        }
-        @media (max-width: 800px) {
-            .stats-grid { grid-template-columns: 1fr; }
-        }
-        .stats-panel {
-            background: #0d0d14;
-            border: 1px solid #1a1e2a;
-            border-radius: 2px;
-            padding: 16px;
-        }
-        .stats-panel-title {
-            font-size: 10px;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            color: #555;
-            margin-bottom: 12px;
-        }
-        .bar-row {
-            display: flex;
-            align-items: center;
-            margin-bottom: 8px;
-            font-size: 12px;
-        }
-        .bar-label {
-            width: 120px;
-            color: #999;
-            flex-shrink: 0;
-        }
-        .bar-track {
-            flex: 1;
-            height: 14px;
-            background: #111318;
-            border: 1px solid #1a1e2a;
-            border-radius: 1px;
-            overflow: hidden;
-            margin: 0 8px;
-        }
-        .bar-fill {
-            height: 100%;
-            background: #3b82f6;
-            transition: width 0.5s;
-        }
-        .bar-fill.red { background: #ff2020; }
-        .bar-fill.orange { background: #ffaa00; }
-        .bar-fill.green { background: #00ff41; }
-        .bar-count {
-            width: 36px;
-            text-align: right;
-            color: #888;
-            flex-shrink: 0;
-        }
-
-        /* Incidents table */
-        .incidents-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 11px;
-        }
-        .incidents-table th {
-            text-align: left;
-            padding: 6px 8px;
-            border-bottom: 1px solid #1a1e2a;
-            color: #555;
-            font-size: 10px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            font-weight: 400;
-        }
-        .incidents-table td {
-            padding: 6px 8px;
-            border-bottom: 1px solid #0f1118;
-            color: #999;
-        }
-        .incidents-table tr:hover td { background: #111318; }
         .status-dot {
             display: inline-block;
             width: 8px;
@@ -498,13 +382,6 @@
             padding: 16px 24px;
             width: 100%;
         }
-        .analytics-kpi {
-            display: flex;
-            gap: 16px;
-            margin-bottom: 16px;
-            flex-shrink: 0;
-            flex-wrap: wrap;
-        }
         .analytics-iframe-wrap {
             flex: 1;
             position: relative;
@@ -563,7 +440,6 @@
         <span class="logo">ФАВН</span>
         <div class="tab-btns">
             <button class="tab-btn active" id="tab-map" onclick="switchTab('map')">КАРТА</button>
-            <button class="tab-btn" id="tab-stats" onclick="switchTab('stats')">СТАТ</button>
             <button class="tab-btn" id="tab-analytics" onclick="switchTab('analytics')">АНАЛИТИКА</button>
         </div>
         <span class="ws-status" id="ws-status">&#9679; ОТКЛ</span>
@@ -590,19 +466,8 @@
         </div>
     </div>
 
-    <!-- Stats page -->
-    <div class="page stats-page" id="page-stats">
-        <div class="stats-kpi" id="stats-kpi"></div>
-        <div class="stats-grid" id="stats-grid"></div>
-        <div class="stats-panel" id="stats-incidents">
-            <div class="stats-panel-title">ПОСЛЕДНИЕ ИНЦИДЕНТЫ</div>
-            <div id="incidents-body"></div>
-        </div>
-    </div>
-
     <!-- Analytics page -->
     <div class="page analytics-page" id="page-analytics">
-        <div class="analytics-kpi" id="analytics-kpi"></div>
         <div class="analytics-iframe-wrap">
             <iframe id="datalens-iframe" class="datalens-iframe" allowfullscreen></iframe>
             <div class="datalens-placeholder" id="datalens-placeholder">
@@ -698,16 +563,11 @@
 
         window.switchTab = function(tab) {
             document.getElementById('page-map').classList.toggle('active', tab === 'map');
-            document.getElementById('page-stats').classList.toggle('active', tab === 'stats');
             document.getElementById('page-analytics').classList.toggle('active', tab === 'analytics');
             document.getElementById('tab-map').classList.toggle('active', tab === 'map');
-            document.getElementById('tab-stats').classList.toggle('active', tab === 'stats');
             document.getElementById('tab-analytics').classList.toggle('active', tab === 'analytics');
             if (tab === 'map') {
                 setTimeout(function() { map.invalidateSize(); }, 100);
-            }
-            if (tab === 'stats') {
-                loadStats();
             }
             if (tab === 'analytics') {
                 loadAnalytics();
@@ -716,33 +576,6 @@
 
         var analyticsLoaded = false;
         function loadAnalytics() {
-            // Load KPI
-            fetch('/api/v1/datalens/stats').then(function(r) { return r.json(); }).then(function(stats) {
-                var kpiEl = document.getElementById('analytics-kpi');
-                kpiEl.textContent = '';
-                var total = stats.total_incidents || 0;
-                var avgTime = stats.avg_response_time_min || 0;
-                var detRate = stats.detection_rate || 0;
-                var kpis = [
-                    { value: total, label: 'ВСЕГО ИНЦИДЕНТОВ', cls: '' },
-                    { value: avgTime + ' мин', label: 'СР. ВРЕМЯ РЕАКЦИИ', cls: avgTime > 30 ? 'alert' : 'ok' },
-                    { value: detRate + '%', label: 'DETECTION RATE', cls: detRate > 50 ? 'ok' : 'warn' }
-                ];
-                kpis.forEach(function(k) {
-                    var card = document.createElement('div');
-                    card.className = 'kpi-card';
-                    var val = document.createElement('div');
-                    val.className = 'kpi-value' + (k.cls ? ' ' + k.cls : '');
-                    val.textContent = k.value;
-                    var lbl = document.createElement('div');
-                    lbl.className = 'kpi-label';
-                    lbl.textContent = k.label;
-                    card.appendChild(val);
-                    card.appendChild(lbl);
-                    kpiEl.appendChild(card);
-                });
-            }).catch(function() {});
-
             // Load iframe once
             if (!analyticsLoaded) {
                 var iframe = document.getElementById('datalens-iframe');
@@ -1367,164 +1200,6 @@
         };
 
         /* ---- Stats page ---- */
-        var STATUS_RU = {
-            'resolved': 'решено', 'false_alarm': 'ложное',
-            'pending': 'ожидание', 'accepted': 'принято', 'on_site': 'на месте'
-        };
-        var BAR_COLORS = {
-            'chainsaw': 'red', 'gunshot': 'orange', 'engine': '', 'axe': 'green'
-        };
-
-        function loadStats() {
-            Promise.all([
-                fetch('/api/v1/datalens/stats').then(function(r) { return r.json(); }),
-                fetch('/api/v1/datalens/incidents').then(function(r) { return r.json(); })
-            ]).then(function(results) {
-                renderStats(results[0], results[1]);
-            }).catch(function(e) {
-                document.getElementById('stats-kpi').textContent = 'Ошибка загрузки: ' + e.message;
-            });
-        }
-
-        function renderStats(stats, incidents) {
-            var kpiEl = document.getElementById('stats-kpi');
-            kpiEl.textContent = '';
-            var total = stats.total_incidents || 0;
-            var resolved = (stats.by_status && stats.by_status.resolved) || 0;
-            var falseAlarm = (stats.by_status && stats.by_status.false_alarm) || 0;
-            var avgTime = stats.avg_response_time_min || 0;
-
-            var kpis = [
-                { value: total, label: 'ВСЕГО', cls: '' },
-                { value: resolved, label: 'РЕШЕНО', cls: 'ok' },
-                { value: falseAlarm, label: 'ЛОЖНЫХ', cls: 'warn' },
-                { value: avgTime + 'м', label: 'РЕАКЦИЯ', cls: '' }
-            ];
-            kpis.forEach(function(k) {
-                var card = document.createElement('div');
-                card.className = 'kpi-card';
-                var val = document.createElement('div');
-                val.className = 'kpi-value' + (k.cls ? ' ' + k.cls : '');
-                val.textContent = k.value;
-                var lbl = document.createElement('div');
-                lbl.className = 'kpi-label';
-                lbl.textContent = k.label;
-                card.appendChild(val);
-                card.appendChild(lbl);
-                kpiEl.appendChild(card);
-            });
-
-            var gridEl = document.getElementById('stats-grid');
-            gridEl.textContent = '';
-
-            // By class panel
-            var classPanel = document.createElement('div');
-            classPanel.className = 'stats-panel';
-            var classTitle = document.createElement('div');
-            classTitle.className = 'stats-panel-title';
-            classTitle.textContent = 'ПО ТИПАМ';
-            classPanel.appendChild(classTitle);
-
-            var byClass = stats.by_class || {};
-            var maxClass = Math.max.apply(null, Object.values(byClass).concat([1]));
-            Object.keys(byClass).forEach(function(key) {
-                var row = document.createElement('div');
-                row.className = 'bar-row';
-                var label = document.createElement('span');
-                label.className = 'bar-label';
-                label.textContent = classRu(key);
-                var track = document.createElement('div');
-                track.className = 'bar-track';
-                var fill = document.createElement('div');
-                fill.className = 'bar-fill' + (BAR_COLORS[key] ? ' ' + BAR_COLORS[key] : '');
-                fill.style.width = ((byClass[key] / maxClass) * 100) + '%';
-                track.appendChild(fill);
-                var count = document.createElement('span');
-                count.className = 'bar-count';
-                count.textContent = byClass[key];
-                row.appendChild(label);
-                row.appendChild(track);
-                row.appendChild(count);
-                classPanel.appendChild(row);
-            });
-            gridEl.appendChild(classPanel);
-
-            // By district panel
-            var distPanel = document.createElement('div');
-            distPanel.className = 'stats-panel';
-            var distTitle = document.createElement('div');
-            distTitle.className = 'stats-panel-title';
-            distTitle.textContent = 'ПО РАЙОНАМ';
-            distPanel.appendChild(distTitle);
-
-            var byDistrict = stats.by_district || {};
-            var maxDist = Math.max.apply(null, Object.values(byDistrict).concat([1]));
-            Object.keys(byDistrict).forEach(function(key) {
-                var row = document.createElement('div');
-                row.className = 'bar-row';
-                var label = document.createElement('span');
-                label.className = 'bar-label';
-                label.textContent = key;
-                var track = document.createElement('div');
-                track.className = 'bar-track';
-                var fill = document.createElement('div');
-                fill.className = 'bar-fill';
-                fill.style.width = ((byDistrict[key] / maxDist) * 100) + '%';
-                track.appendChild(fill);
-                var count = document.createElement('span');
-                count.className = 'bar-count';
-                count.textContent = byDistrict[key];
-                row.appendChild(label);
-                row.appendChild(track);
-                row.appendChild(count);
-                distPanel.appendChild(row);
-            });
-            gridEl.appendChild(distPanel);
-
-            // Incidents table
-            var body = document.getElementById('incidents-body');
-            body.textContent = '';
-            var table = document.createElement('table');
-            table.className = 'incidents-table';
-            var thead = document.createElement('thead');
-            var headRow = document.createElement('tr');
-            ['ДАТА', 'ТИП', 'УВЕРЕННОСТЬ', 'РАЙОН', 'СТАТУС'].forEach(function(h) {
-                var th = document.createElement('th');
-                th.textContent = h;
-                headRow.appendChild(th);
-            });
-            thead.appendChild(headRow);
-            table.appendChild(thead);
-
-            var tbody = document.createElement('tbody');
-            var list = Array.isArray(incidents) ? incidents : (incidents.incidents || []);
-            list.slice(0, 20).forEach(function(inc) {
-                var tr = document.createElement('tr');
-                var tdDate = document.createElement('td');
-                tdDate.textContent = (inc.timestamp || inc.date || '').substring(0, 16);
-                var tdClass = document.createElement('td');
-                tdClass.textContent = classRu(inc.audio_class || inc.type || '');
-                var tdConf = document.createElement('td');
-                tdConf.textContent = inc.confidence ? (inc.confidence * 100).toFixed(0) + '%' : '';
-                var tdDist = document.createElement('td');
-                tdDist.textContent = inc.sub_district || inc.district || '';
-                var tdStatus = document.createElement('td');
-                var dot = document.createElement('span');
-                var st = inc.status || 'pending';
-                dot.className = 'status-dot ' + st;
-                tdStatus.appendChild(dot);
-                tdStatus.appendChild(document.createTextNode(STATUS_RU[st] || st));
-                tr.appendChild(tdDate);
-                tr.appendChild(tdClass);
-                tr.appendChild(tdConf);
-                tr.appendChild(tdDist);
-                tr.appendChild(tdStatus);
-                tbody.appendChild(tr);
-            });
-            table.appendChild(tbody);
-            body.appendChild(table);
-        }
-
     })();
     </script>
 </body>
