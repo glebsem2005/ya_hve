@@ -86,19 +86,26 @@ def _download_esc50(scenario: str) -> np.ndarray | None:
 
 
 def _download_gunshot_us8k() -> np.ndarray | None:
-    """Extract a gun_shot sample from UrbanSound8K (HuggingFace parquet)."""
+    """Extract a gun_shot sample from UrbanSound8K (HuggingFace parquet).
+
+    Uses shard 02 which has the best gunshot samples (4s, high peak).
+    Target file: 135528-6-2-0.wav — reliably classified by YAMNet v7.
+    """
     try:
         from huggingface_hub import hf_hub_download
         import pyarrow.parquet as pq
 
         path = hf_hub_download(
             "danavery/urbansound8K",
-            "data/train-00000-of-00016-e478d7cccca6a095.parquet",
+            "data/train-00002-of-00016-887e0748205b6fa9.parquet",
             repo_type="dataset",
         )
         table = pq.read_table(path)
         df = table.to_pandas()
-        gun = df[df["classID"] == 6].iloc[0]
+        guns = df[df["classID"] == 6]
+        # Prefer specific file known to classify well; fallback to first
+        target = guns[guns["slice_file_name"] == "135528-6-2-0.wav"]
+        gun = target.iloc[0] if len(target) > 0 else guns.iloc[0]
         data, sr = sf.read(io.BytesIO(gun["audio"]["bytes"]))
         print(f"  downloaded gunshot from UrbanSound8K ({gun['slice_file_name']})")
         return _process(data, sr)
