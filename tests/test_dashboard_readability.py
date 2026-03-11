@@ -132,3 +132,25 @@ def test_events_log_responsive_width(html):
     block = m.group(1)
     assert "max-width" in block, ".events-log must have max-width"
     assert "calc(" in block, ".events-log width must use calc() for responsiveness"
+
+
+# --- Protocol PDF link removal ---
+
+
+def test_no_protocol_pdf_link_in_html(html):
+    """HTML must not contain a protocol.pdf download link."""
+    assert "protocol.pdf" not in html, (
+        "protocol.pdf link must be removed from dashboard (download via Telegram bot)"
+    )
+
+
+def test_no_build_protocol_function(html):
+    """HTML must not contain the buildProtocol JS function."""
+    assert "buildProtocol" not in html, (
+        "buildProtocol function must be removed from dashboard"
+    )
+
+
+def test_no_proto_link_css(html):
+    """HTML must not contain .proto-link CSS class."""
+    assert ".proto-link" not in html, ".proto-link CSS must be removed from dashboard"

@@ -314,14 +314,6 @@
             padding-left: 6px;
         }
 
-        /* Protocol link */
-        .proto-link {
-            color: #555;
-            font-size: 14px;
-            text-decoration: none;
-            transition: color 0.15s;
-        }
-        .proto-link:hover { color: #888; }
 
         .status-dot {
             display: inline-block;
@@ -716,7 +708,7 @@
 
         /* ---- Sidebar ---- */
         var sidebar = document.getElementById('sidebar');
-        var SECTION_ORDER = ['detection', 'location', 'decision', 'drone', 'vision', 'alert', 'rag', 'protocol'];
+        var SECTION_ORDER = ['detection', 'location', 'decision', 'drone', 'vision', 'alert', 'rag'];
 
         function addSection(id, label, contentEl) {
             var empty = document.getElementById('sb-empty');
@@ -853,19 +845,7 @@
             return frag;
         }
 
-        function buildProtocol(incidentId) {
-            var a = document.createElement('a');
-            a.className = 'proto-link';
-            if (incidentId) {
-                a.href = '/api/v1/incidents/' + incidentId + '/protocol.pdf';
-                a.textContent = 'Скачать протокол PDF';
-            } else {
-                a.href = '#';
-                a.textContent = 'Протокол PDF (ID инцидента недоступен)';
-                a.addEventListener('click', function(e) { e.preventDefault(); });
-            }
-            return a;
-        }
+
 
         /* ---- Clear incident layers ---- */
         function clearIncidentLayers() {
@@ -1014,7 +994,6 @@
                     incident.alertText = d.text;
                     incident.id = d.incident_id;
                     addSection('alert', 'YANDEXGPT', buildAlert(d));
-                    addSection('protocol', '', buildProtocol(incident.id));
                     logEvent('АЛЕРТ', 'отправлен', 'high');
                     break;
                 }
