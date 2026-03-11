@@ -77,6 +77,7 @@ async def drone_photo_handler(
                 "has_felling": result.has_felling,
                 "has_human": result.has_human,
                 "has_fire": result.has_fire,
+                "has_machinery": result.has_machinery,
                 "is_threat": result.is_threat,
             }
         )
@@ -86,7 +87,9 @@ async def drone_photo_handler(
 
         if has_threat:
             # Map vision flags to audio class for pipeline compatibility
-            if result.has_felling:
+            if result.has_machinery:
+                audio_class = "engine"
+            elif result.has_felling:
                 audio_class = "chainsaw"
             elif result.has_fire:
                 audio_class = "fire"
@@ -117,20 +120,21 @@ async def drone_photo_handler(
             except Exception:
                 logger.exception("Step 1 failed: send_pending")
 
-            # Step 2: Compose alert text via YandexGPT
+            # Step 2: Compose alert text via YandexGPT (skip if no incident)
             alert = None
-            try:
-                from cloud.agent.decision import compose_alert
+            if incident:
+                try:
+                    from cloud.agent.decision import compose_alert
 
-                alert = await compose_alert(
-                    audio_class=audio_class,
-                    visual_description=result.description,
-                    lat=lat,
-                    lon=lon,
-                    confidence=confidence,
-                )
-            except Exception:
-                logger.exception("Step 2 failed: compose_alert")
+                    alert = await compose_alert(
+                        audio_class=audio_class,
+                        visual_description=result.description,
+                        lat=lat,
+                        lon=lon,
+                        confidence=confidence,
+                    )
+                except Exception:
+                    logger.exception("Step 2 failed: compose_alert")
 
             # Step 3: Store drone photo in incident (sent after ranger accepts)
             if alert and incident:

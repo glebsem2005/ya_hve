@@ -243,6 +243,143 @@ class TestDroneBot:
         assert "не удалось проанализировать" not in last_call[0][0].lower()
 
     @pytest.mark.asyncio
+    @patch("cloud.notify.drone_bot_handlers.broadcast", new_callable=AsyncMock)
+    @patch("cloud.notify.telegram.send_confirmed", new_callable=AsyncMock)
+    @patch(
+        "cloud.agent.decision.compose_alert",
+        new_callable=AsyncMock,
+        return_value="Alert text",
+    )
+    @patch("cloud.notify.telegram.send_pending", new_callable=AsyncMock)
+    @patch("cloud.vision.classifier.classify_photo", new_callable=AsyncMock)
+    async def test_threat_machinery_maps_to_engine(
+        self,
+        mock_classify,
+        mock_send_pending,
+        mock_compose_alert,
+        mock_send_confirmed,
+        mock_broadcast,
+    ):
+        """Heavy machinery + felling → audio_class='engine', not 'chainsaw'."""
+        result = MagicMock()
+        result.description = "Тяжёлая техника на вырубке леса"
+        result.has_felling = True
+        result.has_human = False
+        result.has_fire = False
+        result.has_machinery = True
+        result.is_threat = True
+        mock_classify.return_value = result
+        mock_send_pending.return_value = MagicMock()
+
+        update = _make_photo_update(800)
+        await drone_photo_handler(update, MagicMock())
+
+        # send_pending should receive audio_class='engine'
+        assert mock_send_pending.call_args.kwargs.get("audio_class") == "engine"
+        text = update.message.reply_text.call_args[0][0]
+        assert "engine" in text.lower()
+
+    @pytest.mark.asyncio
+    @patch("cloud.notify.drone_bot_handlers.broadcast", new_callable=AsyncMock)
+    @patch("cloud.notify.telegram.send_confirmed", new_callable=AsyncMock)
+    @patch(
+        "cloud.agent.decision.compose_alert",
+        new_callable=AsyncMock,
+        return_value="Alert text",
+    )
+    @patch("cloud.notify.telegram.send_pending", new_callable=AsyncMock)
+    @patch("cloud.vision.classifier.classify_photo", new_callable=AsyncMock)
+    async def test_threat_felling_no_machinery_maps_to_chainsaw(
+        self,
+        mock_classify,
+        mock_send_pending,
+        mock_compose_alert,
+        mock_send_confirmed,
+        mock_broadcast,
+    ):
+        """Felling without machinery → audio_class='chainsaw' (existing behavior)."""
+        result = MagicMock()
+        result.description = "Рубка деревьев бензопилой"
+        result.has_felling = True
+        result.has_human = True
+        result.has_fire = False
+        result.has_machinery = False
+        result.is_threat = True
+        mock_classify.return_value = result
+        mock_send_pending.return_value = MagicMock()
+
+        update = _make_photo_update(900)
+        await drone_photo_handler(update, MagicMock())
+
+        assert mock_send_pending.call_args.kwargs.get("audio_class") == "chainsaw"
+
+    @pytest.mark.asyncio
+    @patch("cloud.notify.drone_bot_handlers.broadcast", new_callable=AsyncMock)
+    @patch("cloud.vision.classifier.classify_photo", new_callable=AsyncMock)
+    async def test_broadcast_includes_has_machinery(
+        self, mock_classify, mock_broadcast
+    ):
+        """vision_classified broadcast must include has_machinery field."""
+        result = MagicMock()
+        result.description = "Харвестер на вырубке"
+        result.has_felling = True
+        result.has_human = False
+        result.has_fire = False
+        result.has_machinery = True
+        result.is_threat = False
+        mock_classify.return_value = result
+
+        update = _make_photo_update(1000)
+        await drone_photo_handler(update, MagicMock())
+
+        # Find the vision_classified broadcast call
+        vision_call = None
+        for call in mock_broadcast.call_args_list:
+            msg = call[0][0]
+            if isinstance(msg, dict) and msg.get("event") == "vision_classified":
+                vision_call = msg
+                break
+        assert vision_call is not None, "vision_classified broadcast not found"
+        assert "has_machinery" in vision_call
+        assert vision_call["has_machinery"] is True
+
+    @pytest.mark.asyncio
+    @patch("cloud.notify.drone_bot_handlers.broadcast", new_callable=AsyncMock)
+    @patch(
+        "cloud.agent.decision.compose_alert",
+        new_callable=AsyncMock,
+        return_value="Alert text",
+    )
+    @patch(
+        "cloud.notify.telegram.send_pending",
+        new_callable=AsyncMock,
+        side_effect=Exception("Telegram down"),
+    )
+    @patch("cloud.vision.classifier.classify_photo", new_callable=AsyncMock)
+    async def test_threat_skips_compose_when_pending_fails(
+        self,
+        mock_classify,
+        mock_send_pending,
+        mock_compose_alert,
+        mock_broadcast,
+    ):
+        """If send_pending fails, compose_alert should NOT be called."""
+        result = MagicMock()
+        result.description = "Рубка деревьев"
+        result.has_felling = True
+        result.has_human = False
+        result.has_fire = False
+        result.has_machinery = False
+        result.is_threat = True
+        mock_classify.return_value = result
+
+        update = _make_photo_update(1100)
+        await drone_photo_handler(update, MagicMock())
+
+        mock_send_pending.assert_called_once()
+        mock_compose_alert.assert_not_called()
+
+    @pytest.mark.asyncio
     @patch(
         "cloud.vision.classifier.classify_photo",
         new_callable=AsyncMock,

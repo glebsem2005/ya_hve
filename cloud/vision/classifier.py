@@ -23,9 +23,11 @@ PROMPT = """Проанализируй снимок с дрона в лесу.
   "has_human": true/false,
   "has_fire": true/false,
   "has_felling": true/false,
+  "has_machinery": true/false,
   "is_threat": true/false
 }
-is_threat = true ТОЛЬКО если видны признаки нарушения: незаконная рубка, браконьерство, поджог, подозрительная техника. Туристы, грибники, мероприятия, дороги — это НЕ угроза."""
+has_machinery = true если видна тяжёлая техника (трактор, экскаватор, лесовоз, харвестер и т.п.).
+is_threat = true если видны признаки нарушения: незаконная рубка, браконьерство, поджог, подозрительная техника, человек с инструментом (топор, бензопила) в лесу. Туристы, грибники, мероприятия, дороги — это НЕ угроза."""
 
 
 @dataclass
@@ -34,6 +36,7 @@ class VisionResult:
     has_human: bool
     has_fire: bool
     has_felling: bool
+    has_machinery: bool
     is_threat: bool
 
 
@@ -44,12 +47,25 @@ def _parse_result(raw: str) -> VisionResult:
     except json.JSONDecodeError:
         logger.warning("Vision: failed to parse JSON: %s", raw[:200])
         return _stub_result()
+    has_human = data.get("has_human", False)
+    has_felling = data.get("has_felling", False)
+    has_fire = data.get("has_fire", False)
+    is_threat = data.get("is_threat", False)
+
+    # Safety net: human + felling/fire/tools → always a threat
+    description = data.get("description") or ""
+    _TOOL_KEYWORDS = ("топор", "бензопил", "пила", "ружь", "винтовк", "оружи")
+    desc_has_tool = any(kw in description.lower() for kw in _TOOL_KEYWORDS)
+    if has_human and (has_felling or has_fire or desc_has_tool):
+        is_threat = True
+
     return VisionResult(
-        description=data.get("description", ""),
-        has_human=data.get("has_human", False),
-        has_fire=data.get("has_fire", False),
-        has_felling=data.get("has_felling", False),
-        is_threat=data.get("is_threat", False),
+        description=description,
+        has_human=has_human,
+        has_fire=has_fire,
+        has_felling=has_felling,
+        has_machinery=data.get("has_machinery", False),
+        is_threat=is_threat,
     )
 
 
@@ -120,6 +136,7 @@ def _stub_result() -> VisionResult:
         has_human=False,
         has_fire=False,
         has_felling=True,
+        has_machinery=False,
         is_threat=True,
     )
 
